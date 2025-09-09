@@ -42,6 +42,8 @@ huggingface-cli download Skywork/Matrix-Game-2.0 --local-dir Matrix-Game-2.0
 ```
 
 ### Inference
+python inference.py --config_path configs/inference_yaml/{your-config}.yaml --checkpoint_path {path-to-the-checkpoint} --img_path {path-to-the-input-image} --output_folder outputs --num_output_frames 150 --seed 42 --pretrained_model_path {path
+
 After downloading pretrained models, you can use the following command to generate an interactive video with random action trajectories:
 ```
 python inference.py \
@@ -62,6 +64,30 @@ python inference_streaming.py \
     --seed 42 \
     --pretrained_model_path {path-to-the-vae-folder}
 ```
+C:\workspace\NAVIGATION\Matrix-Game\Matrix-Game-2\Matrix-Game-2.0\base_distilled_model\base_distill.safetensors
+C:\workspace\NAVIGATION\Matrix-Game\Matrix-Game-2\demo_images\gta_drive\0000.png
+C:\workspace\NAVIGATION\Matrix-Game\Matrix-Game-2\configs\inference_yaml\inference_gta_drive.yaml
+C:\workspace\NAVIGATION\Matrix-Game\Matrix-Game-2\Matrix-Game-2.0\gta_distilled_model\gta_keyboard2dim.safetensors
+C:\workspace\NAVIGATION\Matrix-Game\Matrix-Game-2\Matrix-Game-2.0
+C:\workspace\NAVIGATION\Matrix-Game\Matrix-Game-2\Matrix-Game-2.0\Wan2.1_VAE.pth
+pip install flash-attn==2.5.8 --no-build-isolation
+git clone https://github.com/Dao-AILab/flash-attention.git
+cd flash-attention
+pip install .
+
+Wan2.1_VAE.pth
+Changed checkpoint_path from Wan2.1_VAE.pth to gta_distilled_model\gta_keyboard2dim.safetensors
+The VAE file (Wan2.1_VAE.pth) should be referenced through the pretrained_model_path directory, not as the main checkpoint
+https://huggingface.co/lldacing/flash-attention-windows-wheel/tree/main
+
+python inference.py --config_path C:\workspace\NAVIGATION\Matrix-Game\Matrix-Game-2\configs\inference_yaml\inference_gta_drive.yaml --checkpoint_path C:\workspace\NAVIGATION\Matrix-Game\Matrix-Game-2\Matrix-Game-2.0\gta_distilled_model\gta_keyboard2dim.safetensors --img_path C:\workspace\NAVIGATION\Matrix-Game\Matrix-Game-2\demo_images\gta_drive\0000.png --output_folder outputs --num_output_frames 150 --seed 42 --pretrained_model_path C:\workspace\NAVIGATION\Matrix-Game\Matrix-Game-2\Matrix-Game-2.0\
+
+python inference.py --config_path C:/workspace/NAVIGATION/Matrix-Game/Matrix-Game-2/configs/inference_yaml/inference_gta_drive.yaml --checkpoint_path C:/orkspace/NAVIGATION/Matrix-Game/Matrix-Game-2/Matrix-Game-2.0/gta_distilled_model/gta_keyboard2dim.safetensors --img_path C:/workspace/NAVIGATION/Matrix-Game/Matrix-Game-2/demo_images\gta_drive/0000.png --output_folder outputs --num_output_frames 150 --seed 42 --pretrained_model_path  C:/workspace/NAVIGATION\Matrix-Game/Matrix-Game-2/Matrix-Game-2.0/gta_distilled_model/gta_keyboard2dim.safetensors
+
+Or, you can use the script `inference_streaming.py` for generating the interactive videos with your own input actions and images:
+
+python inference_streaming.py --config_path configs/inference_yaml/{your-config}.yaml --checkpoint_path {path-to-the-checkpoint} --output_folder outputs --seed 42 --pretrained_model_path {path-to-the-vae-folder}
+
 
 ### Tips
 - In the current version, upward movement for camera may cause brief rendering glitches (e.g., black screens). A fix is planned for future updates. Adjust movement slightly or change direction to resolve it.

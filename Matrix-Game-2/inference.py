@@ -1,7 +1,12 @@
 import os
 import argparse
+#os.environ["TORCH_USE_FLASH_ATTENTION"] = "0"
 import torch
 import numpy as np
+
+# Disable flash attention
+#torch.backends.cuda.enable_flash_sdp(False)
+
 
 from omegaconf import OmegaConf
 from torchvision.transforms import v2
