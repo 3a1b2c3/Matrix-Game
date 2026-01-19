@@ -1,5 +1,7 @@
 from typing import Any, List, Tuple, Optional, Union, Dict
 from einops import rearrange
+import os
+os.environ["TORCH_USE_FLASH_ATTENTION"] = "0"
 from flash_attn import flash_attn_func
 import torch
 import torch.nn as nn
@@ -15,7 +17,8 @@ except:
     FLASH_ATTN_3_AVAILABLE = False
 
 
-DISABLE_COMPILE = False  # get os env
+
+DISABLE_COMPILE = True  # get os env
 flex_attention = torch.compile(
     flex_attention, dynamic=False, mode="max-autotune-no-cudagraphs")
     
