@@ -1,7 +1,7 @@
 from typing import Any, List, Tuple, Optional, Union, Dict
 from einops import rearrange
 import os
-os.environ["TORCH_USE_FLASH_ATTENTION"] = "0"
+#os.environ["TORCH_USE_FLASH_ATTENTION"] = "0"
 from flash_attn import flash_attn_func
 import torch
 import torch.nn as nn
