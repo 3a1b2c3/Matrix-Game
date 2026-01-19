@@ -2,7 +2,7 @@ import os
 import argparse
 import torch
 import numpy as np
-import copy
+from typing import Any, Dict
 
 from omegaconf import OmegaConf
 from torchvision.transforms import v2
@@ -17,7 +17,7 @@ from utils.conditions import *
 from utils.wan_wrapper import WanDiffusionWrapper
 from safetensors.torch import load_file
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", type=str, default="configs/inference_yaml/inference_universal.yaml", help="Path to the config file")
     parser.add_argument("--checkpoint_path", type=str, default="", help="Path to the checkpoint")
@@ -30,10 +30,10 @@ def parse_args():
     return args
 
 class InteractiveGameInference:
-    def __init__(self, args):
-        self.args = args
-        self.device = torch.device("cuda")
-        self.weight_dtype = torch.bfloat16
+    def __init__(self, args: argparse.Namespace) -> None:
+        self.args: argparse.Namespace = args
+        self.device: torch.device = torch.device("cuda")
+        self.weight_dtype: torch.dtype = torch.bfloat16
 
         self._init_config()
         self._init_models()
@@ -44,10 +44,10 @@ class InteractiveGameInference:
             v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
         ])
 
-    def _init_config(self):
-        self.config = OmegaConf.load(self.args.config_path)
+    def _init_config(self) -> None:
+        self.config: OmegaConf = OmegaConf.load(self.args.config_path)
 
-    def _init_models(self):
+    def _init_models(self) -> None:
         # Initialize pipeline
         generator = WanDiffusionWrapper(
             **getattr(self.config, "model_kwargs", {}), is_causal=True)
@@ -68,15 +68,15 @@ class InteractiveGameInference:
             state_dict = load_file(self.args.checkpoint_path)
             pipeline.generator.load_state_dict(state_dict)
 
-        self.pipeline = pipeline.to(device=self.device, dtype=self.weight_dtype)
+        self.pipeline: CausalInferenceStreamingPipeline = pipeline.to(device=self.device, dtype=self.weight_dtype)
         self.pipeline.vae_decoder.to(torch.float16)
 
         vae = get_wanx_vae_wrapper(self.args.pretrained_model_path, torch.float16)
         vae.requires_grad_(False)
         vae.eval()
-        self.vae = vae.to(self.device, self.weight_dtype)
+        self.vae: Any = vae.to(self.device, self.weight_dtype)
 
-    def _resizecrop(self, image, th, tw):
+    def _resizecrop(self, image: Any, th: int, tw: int) -> Any:
         w, h = image.size
         if h / w > th / tw:
             new_w = int(w)
@@ -90,14 +90,18 @@ class InteractiveGameInference:
         bottom = (h + new_h) / 2
         image = image.crop((left, top, right, bottom))
         return image
-    
-    def generate_videos(self, mode='universal'):
+
+    def generate_videos(self, mode: str = 'universal') -> None:
         assert mode in ['universal', 'gta_drive', 'templerun']
-        
+        image = None
         while True:
             try:
                 img_path = input("Please input the image path: ")
                 image = load_image(img_path.strip())
+                if img_path:
+                    p =(os.path.join(self.args.output_folder, os.path.basename(img_path)))
+                    print(p , os.path.exists(p))
+
                 break
             except:
                 print(f"Fail to load image from {img_path}!")
@@ -118,7 +122,7 @@ class InteractiveGameInference:
         )
         num_frames = (self.args.max_num_output_frames - 1) * 4 + 1
         
-        conditional_dict = {
+        conditional_dict: Dict[str, torch.Tensor] = {
             "cond_concat": cond_concat.to(device=self.device, dtype=self.weight_dtype),
             "visual_context": visual_context.to(device=self.device, dtype=self.weight_dtype)
         }
@@ -145,10 +149,11 @@ class InteractiveGameInference:
                 name=os.path.basename(img_path),
                 mode=mode
             )
-        
-def main():
+           
+
+def main() -> None:
     """Main entry point for video generation."""
-    args = parse_args()
+    args: argparse.Namespace = parse_args()
     set_seed(args.seed)
     os.makedirs(args.output_folder, exist_ok=True)
     pipeline = InteractiveGameInference(args)
