@@ -6,7 +6,7 @@ import torch
 import numpy as np
 
 # Disable flash attention
-#torch.backends.cuda.enable_flash_sdp(False)
+torch.backends.cuda.enable_flash_sdp(False)
 
 
 from omegaconf import OmegaConf
