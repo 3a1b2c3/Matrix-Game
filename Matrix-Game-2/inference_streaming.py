@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", type=str, default="configs/inference_yaml/inference_universal.yaml", help="Path to the config file")
     parser.add_argument("--checkpoint_path", type=str, default="", help="Path to the checkpoint")
-    parser.add_argument("--output_folder", type=str, default="outputs/", help="Output folder")
+    parser.add_argument("--output_folder", type=str, default="./outputs/", help="Output folder")
     parser.add_argument("--max_num_output_frames", type=int, default=360,
                         help="Max number of output latent frames")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
@@ -61,7 +61,8 @@ class InteractiveGameInference:
         current_vae_decoder.to(self.device, torch.float16)
         current_vae_decoder.requires_grad_(False)
         current_vae_decoder.eval()
-        current_vae_decoder.compile(mode="max-autotune-no-cudagraphs")
+        if os.name != 'nt':  # Disable torch.compile if running on Windows
+            current_vae_decoder.compile(mode="max-autotune-no-cudagraphs")
         pipeline = CausalInferenceStreamingPipeline(self.config, generator=generator, vae_decoder=current_vae_decoder)
         if self.args.checkpoint_path:
             print("Loading Pretrained Model...")
