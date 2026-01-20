@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Union
 import numpy as np
 import torch
 import time
@@ -27,16 +27,28 @@ KEYBOARD_IDX = {
 # Global variable to track the stop flag
 stop_flag = ['x']
 
-def on_press(key):
+def on_press(key: keyboard.Key) -> None:
+    """
+    Handle key press events to update the global stop_flag.
+    """
     try:
-        if key.char == 'n' or  key.char in KEYBOARD_IDX:
+        if key.char == 'n' or key.char in KEYBOARD_IDX:
             global stop_flag
-            stop_flag[0] = key.char 
+            stop_flag[0] = key.char
     except AttributeError:
-       pass
+        pass
 
 
-def get_current_action(mode="universal"):
+def get_current_action(mode: str = "universal") -> Dict[str, torch.Tensor]:
+    """
+    Get the current action based on the mode.
+
+    Args:
+        mode (str): The mode of the game. Options are 'universal', 'gta_drive', and 'templerun'.
+
+    Returns:
+        Dict[str, torch.Tensor]: A dictionary containing mouse and keyboard conditions.
+    """
     if mode == 'universal':
         print()
         print('-'*30)
@@ -119,7 +131,27 @@ def get_current_action(mode="universal"):
         "keyboard": keyboard_cond
     }
 
-def cond_current(conditional_dict, current_start_frame, num_frame_per_block, replace=None, mode='universal'):
+def cond_current(
+    conditional_dict: Dict[str, torch.Tensor],
+    current_start_frame: int,
+    num_frame_per_block: int,
+    replace: Optional[Dict[str, torch.Tensor]] = None,
+    mode: str = 'universal'
+) -> Union[Dict[str, torch.Tensor], Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]]:
+    """
+    Update the conditional dictionary for the current frame.
+
+    Args:
+        conditional_dict (Dict[str, torch.Tensor]): The original conditional dictionary.
+        current_start_frame (int): The current start frame index.
+        num_frame_per_block (int): The number of frames per block.
+        replace (Optional[Dict[str, torch.Tensor]]): Replacement conditions.
+        mode (str): The mode of the game.
+
+    Returns:
+        Union[Dict[str, torch.Tensor], Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]]:
+        Updated conditional dictionary.
+    """
     
     new_cond = {}
     
@@ -145,12 +177,21 @@ def cond_current(conditional_dict, current_start_frame, num_frame_per_block, rep
 
 class CausalInferencePipeline(torch.nn.Module):
     def __init__(
-            self,
-            args,
-            device="cuda",
-            generator=None,
-            vae_decoder=None,
-    ):
+        self,
+        args: Any,
+        device: str = "cuda",
+        generator: Optional[WanDiffusionWrapper] = None,
+        vae_decoder: Optional[Any] = None,
+    ) -> None:
+        """
+        Initialize the CausalInferencePipeline.
+
+        Args:
+            args (Any): Arguments for the pipeline.
+            device (str): Device to use ('cuda' or 'cpu').
+            generator (Optional[WanDiffusionWrapper]): The generator model.
+            vae_decoder (Optional[Any]): The VAE decoder model.
+        """
         super().__init__()
         # Step 1: Initialize all models
         self.generator = WanDiffusionWrapper(
@@ -186,29 +227,29 @@ class CausalInferencePipeline(torch.nn.Module):
     def inference(
         self,
         noise: torch.Tensor,
-        conditional_dict,
+        conditional_dict: Dict[str, torch.Tensor],
         initial_latent: Optional[torch.Tensor] = None,
         return_latents: bool = False,
-        output_folder = None,
-        name = None,
-        mode = 'universal',
-        export = False,
+        output_folder: Optional[str] = None,
+        name: Optional[str] = None,
+        mode: str = 'universal',
+        export: bool = False,
     ) -> torch.Tensor:
         """
-        Perform inference on the given noise and text prompts.
-        Inputs:
-            noise (torch.Tensor): The input noise tensor of shape
-                (batch_size, num_output_frames, num_channels, height, width).
-            text_prompts (List[str]): The list of text prompts.
-            initial_latent (torch.Tensor): The initial latent tensor of shape
-                (batch_size, num_input_frames, num_channels, height, width).
-                If num_input_frames is 1, perform image to video.
-                If num_input_frames is greater than 1, perform video extension.
-            return_latents (bool): Whether to return the latents.
-        Outputs:
-            video (torch.Tensor): The generated video tensor of shape
-                (batch_size, num_output_frames, num_channels, height, width).
-                It is normalized to be in the range [0, 1].
+        Perform inference on the given noise and conditions.
+
+        Args:
+            noise (torch.Tensor): The input noise tensor.
+            conditional_dict (Dict[str, torch.Tensor]): The conditional dictionary.
+            initial_latent (Optional[torch.Tensor]): The initial latent tensor.
+            return_latents (bool): Whether to return latents.
+            output_folder (Optional[str]): The output folder for saving results.
+            name (Optional[str]): The name of the output file.
+            mode (str): The mode of the game.
+            export (bool): Whether to export the results.
+
+        Returns:
+            torch.Tensor: The generated video tensor.
         """
         
         assert noise.shape[1] == 16
@@ -406,29 +447,29 @@ class CausalInferencePipeline(torch.nn.Module):
     def inference_modular(
         self,
         noise: torch.Tensor,
-        conditional_dict,
+        conditional_dict: Dict[str, torch.Tensor],
         initial_latent: Optional[torch.Tensor] = None,
         return_latents: bool = False,
-        output_folder = None,
-        name = None,
-        mode = 'universal',
-        export = False,
+        output_folder: Optional[str] = None,
+        name: Optional[str] = None,
+        mode: str = 'universal',
+        export: bool = False,
     ) -> torch.Tensor:
         """
-        Perform inference on the given noise and text prompts.
-        Inputs:
-            noise (torch.Tensor): The input noise tensor of shape
-                (batch_size, num_output_frames, num_channels, height, width).
-            text_prompts (List[str]): The list of text prompts.
-            initial_latent (torch.Tensor): The initial latent tensor of shape
-                (batch_size, num_input_frames, num_channels, height, width).
-                If num_input_frames is 1, perform image to video.
-                If num_input_frames is greater than 1, perform video extension.
-            return_latents (bool): Whether to return the latents.
-        Outputs:
-            video (torch.Tensor): The generated video tensor of shape
-                (batch_size, num_output_frames, num_channels, height, width).
-                It is normalized to be in the range [0, 1].
+        Perform modular inference on the given noise and conditions.
+
+        Args:
+            noise (torch.Tensor): The input noise tensor.
+            conditional_dict (Dict[str, torch.Tensor]): The conditional dictionary.
+            initial_latent (Optional[torch.Tensor]): The initial latent tensor.
+            return_latents (bool): Whether to return latents.
+            output_folder (Optional[str]): The output folder for saving results.
+            name (Optional[str]): The name of the output file.
+            mode (str): The mode of the game.
+            export (bool): Whether to export the results.
+
+        Returns:
+            torch.Tensor: The generated video tensor.
         """
         stop_flag = [False]
 
@@ -483,26 +524,57 @@ class CausalInferencePipeline(torch.nn.Module):
             current_start_frame += current_num_frames
 
             # Stop if the 'n' key is pressed
-            if stop_flag[0]:
+            if stop_flag[0] == 'n':
                 print("Stopping inference as 'n' key was pressed.")
+                self.listener.stop()
                 break
-
-        self.listener.stop()
         return self._finalize_videos(videos, conditional_dict, output_folder, name, current_start_frame, mode, return_latents, output)
 
-    def _initialize_vae_cache(self):
+    def _initialize_vae_cache(self) -> List[Optional[torch.Tensor]]:
+        """
+        Initialize the VAE cache.
+
+        Returns:
+            List[Optional[torch.Tensor]]: The initialized VAE cache.
+        """
         vae_cache = copy.deepcopy(ZERO_VAE_CACHE)
         for j in range(len(vae_cache)):
             vae_cache[j] = None
         return vae_cache
 
-    def _initialize_all_caches(self, batch_size, dtype, device):
+    def _initialize_all_caches(self, batch_size: int, dtype: torch.dtype, device: str) -> None:
+        """
+        Initialize all caches for the pipeline.
+
+        Args:
+            batch_size (int): The batch size.
+            dtype (torch.dtype): The data type.
+            device (str): The device to use.
+        """
         self.kv_cache1 = self.kv_cache_keyboard = self.kv_cache_mouse = self.crossattn_cache = None
         self._initialize_kv_cache(batch_size, dtype, device)
         self._initialize_kv_cache_mouse_and_keyboard(batch_size, dtype, device)
         self._initialize_crossattn_cache(batch_size, dtype, device)
 
-    def _process_initial_latent(self, initial_latent, conditional_dict, output, current_start_frame):
+    def _process_initial_latent(
+        self,
+        initial_latent: torch.Tensor,
+        conditional_dict: Dict[str, torch.Tensor],
+        output: torch.Tensor,
+        current_start_frame: int
+    ) -> int:
+        """
+        Process the initial latent tensor.
+
+        Args:
+            initial_latent (torch.Tensor): The initial latent tensor.
+            conditional_dict (Dict[str, torch.Tensor]): The conditional dictionary.
+            output (torch.Tensor): The output tensor.
+            current_start_frame (int): The current start frame index.
+
+        Returns:
+            int: The updated start frame index.
+        """
         timestep = torch.ones([initial_latent.shape[0], 1], device=initial_latent.device, dtype=torch.int64) * 0
         num_input_frames = initial_latent.shape[2]
         num_input_blocks = num_input_frames // self.num_frame_per_block
@@ -525,7 +597,25 @@ class CausalInferencePipeline(torch.nn.Module):
             current_start_frame += self.num_frame_per_block
         return current_start_frame
 
-    def _perform_denoising_loop(self, noisy_input, new_act, current_start_frame, current_num_frames):
+    def _perform_denoising_loop(
+        self,
+        noisy_input: torch.Tensor,
+        new_act: Dict[str, torch.Tensor],
+        current_start_frame: int,
+        current_num_frames: int
+    ) -> torch.Tensor:
+        """
+        Perform the denoising loop.
+
+        Args:
+            noisy_input (torch.Tensor): The noisy input tensor.
+            new_act (Dict[str, torch.Tensor]): The new action dictionary.
+            current_start_frame (int): The current start frame index.
+            current_num_frames (int): The number of frames to process.
+
+        Returns:
+            torch.Tensor: The denoised tensor.
+        """
         for index, current_timestep in enumerate(self.denoising_step_list):
             timestep = torch.ones(
                 [noisy_input.shape[0], current_num_frames],
@@ -566,7 +656,20 @@ class CausalInferencePipeline(torch.nn.Module):
                 )
         return denoised_pred
 
-    def _update_kv_cache_with_clean_context(self, denoised_pred, new_act, current_start_frame):
+    def _update_kv_cache_with_clean_context(
+        self,
+        denoised_pred: torch.Tensor,
+        new_act: Dict[str, torch.Tensor],
+        current_start_frame: int
+    ) -> None:
+        """
+        Update the KV cache with clean context.
+
+        Args:
+            denoised_pred (torch.Tensor): The denoised prediction tensor.
+            new_act (Dict[str, torch.Tensor]): The new action dictionary.
+            current_start_frame (int): The current start frame index.
+        """
         context_timestep = torch.ones_like(denoised_pred[:, :, 0]) * self.args.context_noise
         self.generator(
             noisy_image_or_video=denoised_pred,
@@ -579,7 +682,31 @@ class CausalInferencePipeline(torch.nn.Module):
             current_start=current_start_frame * self.frame_seq_length,
         )
 
-    def _process_video_output(self, denoised_pred, vae_cache, conditional_dict, output_folder, name, current_start_frame, mode):
+    def _process_video_output(
+        self,
+        denoised_pred: torch.Tensor,
+        vae_cache: List[Optional[torch.Tensor]],
+        conditional_dict: Dict[str, torch.Tensor],
+        output_folder: Optional[str],
+        name: Optional[str],
+        current_start_frame: int,
+        mode: str
+    ) -> np.ndarray:
+        """
+        Process the video output.
+
+        Args:
+            denoised_pred (torch.Tensor): The denoised prediction tensor.
+            vae_cache (List[Optional[torch.Tensor]]): The VAE cache.
+            conditional_dict (Dict[str, torch.Tensor]): The conditional dictionary.
+            output_folder (Optional[str]): The output folder for saving results.
+            name (Optional[str]): The name of the output file.
+            current_start_frame (int): The current start frame index.
+            mode (str): The mode of the game.
+
+        Returns:
+            np.ndarray: The processed video array.
+        """
         denoised_pred = denoised_pred.transpose(1, 2)
         video, vae_cache = self.vae_decoder(denoised_pred.half(), *vae_cache)
         video = rearrange(video, "B T C H W -> B T H W C")
@@ -598,7 +725,33 @@ class CausalInferencePipeline(torch.nn.Module):
         process_video(video, output_folder + f'/{name}_current.mp4', config, mouse_icon, mouse_scale=0.1, process_icon=False, mode=mode)
         return video
 
-    def _finalize_videos(self, videos, conditional_dict, output_folder, name, current_start_frame, mode, return_latents, output):
+    def _finalize_videos(
+        self,
+        videos: List[torch.Tensor],
+        conditional_dict: Dict[str, torch.Tensor],
+        output_folder: Optional[str],
+        name: Optional[str],
+        current_start_frame: int,
+        mode: str,
+        return_latents: bool,
+        output: torch.Tensor
+    ) -> Union[torch.Tensor, np.ndarray]:
+        """
+        Finalize the videos and save the results.
+
+        Args:
+            videos (List[torch.Tensor]): The list of video tensors.
+            conditional_dict (Dict[str, torch.Tensor]): The conditional dictionary.
+            output_folder (Optional[str]): The output folder for saving results.
+            name (Optional[str]): The name of the output file.
+            current_start_frame (int): The current start frame index.
+            mode (str): The mode of the game.
+            return_latents (bool): Whether to return latents.
+            output (torch.Tensor): The output tensor.
+
+        Returns:
+            Union[torch.Tensor, np.ndarray]: The final video or latents.
+        """
         videos_tensor = torch.cat(videos, dim=1)
         videos = rearrange(videos_tensor, "B T C H W -> B T H W C")
         videos = ((videos.float() + 1) * 127.5).clip(0, 255).cpu().numpy().astype(np.uint8)[0]
