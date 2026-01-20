@@ -472,11 +472,10 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
         self,
         noise: torch.Tensor,
         conditional_dict,
-        initial_latent: Optional[torch.Tensor] = None,
-        return_latents: bool = False,
-        output_folder = None,
-        name = None,
-        mode = 'universal'
+        initial_latent = None,
+        return_latents = False,
+        mode = 'universal',
+        profile = False,
     ) -> torch.Tensor:
         """
         Perform inference on the given noise and text prompts.
@@ -513,8 +512,8 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
         vae_cache = copy.deepcopy(ZERO_VAE_CACHE)
         for j in range(len(vae_cache)):
             vae_cache[j] = None
-        # Set up profiling if requested
-        self.kv_cache1=self.kv_cache_keyboard=self.kv_cache_mouse=self.crossattn_cache=None
+
+        self.kv_cache1 = self.kv_cache_keyboard = self.kv_cache_mouse = self.crossattn_cache=None
         # Step 1: Initialize KV cache to all zeros
         if self.kv_cache1 is None:
             self._initialize_kv_cache(
@@ -555,7 +554,6 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
         current_start_frame = 0
         if initial_latent is not None:
             timestep = torch.ones([batch_size, 1], device=noise.device, dtype=torch.int64) * 0
-            
             # Assume num_input_frames is self.num_frame_per_block * num_input_blocks
             assert num_input_frames % self.num_frame_per_block == 0
             num_input_blocks = num_input_frames // self.num_frame_per_block
@@ -564,9 +562,10 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
                 current_ref_latents = \
                     initial_latent[:, :, current_start_frame:current_start_frame + self.num_frame_per_block]
                 output[:, :, current_start_frame:current_start_frame + self.num_frame_per_block] = current_ref_latents
+                
                 self.generator(
                     noisy_image_or_video=current_ref_latents,
-                    conditional_dict=cond_current(conditional_dict, current_start_frame, self.num_frame_per_block, replace=True),
+                    conditional_dict=cond_current(conditional_dict, current_start_frame, self.num_frame_per_block, mode=mode),
                     timestep=timestep * 0,
                     kv_cache=self.kv_cache1,
                     kv_cache_mouse=self.kv_cache_mouse,
@@ -576,17 +575,21 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
                 )
                 current_start_frame += self.num_frame_per_block
 
+
         # Step 3: Temporal denoising loop
         all_num_frames = [self.num_frame_per_block] * num_blocks
-        
-        for current_num_frames in all_num_frames:
+        if profile:
+            diffusion_start = torch.cuda.Event(enable_timing=True)
+            diffusion_end = torch.cuda.Event(enable_timing=True)
+        for current_num_frames in tqdm(all_num_frames):
+
             noisy_input = noise[
                 :, :, current_start_frame - num_input_frames:current_start_frame + current_num_frames - num_input_frames]
 
-            current_actions = get_current_action(mode=mode)
-            new_act, conditional_dict = cond_current(conditional_dict, current_start_frame, self.num_frame_per_block, replace=current_actions, mode=mode)
             # Step 3.1: Spatial denoising loop
-
+            if profile:
+                torch.cuda.synchronize()
+                diffusion_start.record()
             for index, current_timestep in enumerate(self.denoising_step_list):
                 # set current timestep
                 timestep = torch.ones(
@@ -597,7 +600,7 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
                 if index < len(self.denoising_step_list) - 1:
                     _, denoised_pred = self.generator(
                         noisy_image_or_video=noisy_input,
-                        conditional_dict=new_act,
+                        conditional_dict=cond_current(conditional_dict, current_start_frame, self.num_frame_per_block, mode=mode),
                         timestep=timestep,
                         kv_cache=self.kv_cache1,
                         kv_cache_mouse=self.kv_cache_mouse,
@@ -617,7 +620,7 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
                     # for getting real output
                     _, denoised_pred = self.generator(
                         noisy_image_or_video=noisy_input,
-                        conditional_dict=new_act,
+                        conditional_dict=cond_current(conditional_dict, current_start_frame, self.num_frame_per_block, mode=mode),
                         timestep=timestep,
                         kv_cache=self.kv_cache1,
                         kv_cache_mouse=self.kv_cache_mouse,
@@ -634,7 +637,7 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
             
             self.generator(
                 noisy_image_or_video=denoised_pred,
-                conditional_dict=new_act,
+                conditional_dict=cond_current(conditional_dict, current_start_frame, self.num_frame_per_block, mode=mode),
                 timestep=context_timestep,
                 kv_cache=self.kv_cache1,
                 kv_cache_mouse=self.kv_cache_mouse,
@@ -644,49 +647,24 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
             )
 
             # Step 3.4: update the start and end frame indices
+            current_start_frame += current_num_frames
+
             denoised_pred = denoised_pred.transpose(1,2)
             video, vae_cache = self.vae_decoder(denoised_pred.half(), *vae_cache)
             videos += [video]
-            video = rearrange(video, "B T C H W -> B T H W C")
-            video = ((video.float() + 1) * 127.5).clip(0, 255).cpu().numpy().astype(np.uint8)[0]
-            video = np.ascontiguousarray(video)
-            mouse_icon = 'assets/images/mouse.png'
-            if mode != 'templerun':
-                config = (
-                    conditional_dict["keyboard_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy(),
-                    conditional_dict["mouse_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy(),
-                )
-            else:
-                config = (
-                    conditional_dict["keyboard_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy()
-                )
-            process_video(video.astype(np.uint8), output_folder+f'/{name}_current.mp4', config, mouse_icon, mouse_scale=0.1, process_icon=False, mode=mode)
-            current_start_frame += current_num_frames
 
-            if input("Continue? (Press `n` to break)").strip() == "n":
-                break
-                
-        videos_tensor = torch.cat(videos, dim=1)
-        videos = rearrange(videos_tensor, "B T C H W -> B T H W C")
-        videos = ((videos.float() + 1) * 127.5).clip(0, 255).cpu().numpy().astype(np.uint8)[0]
-        video = np.ascontiguousarray(videos)
-        mouse_icon = 'assets/images/mouse.png'
-        if mode != 'templerun':
-            config = (
-                conditional_dict["keyboard_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy(),
-                conditional_dict["mouse_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy(),
-            )
-        else:
-            config = (
-                conditional_dict["keyboard_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy()
-            )
-        process_video(video.astype(np.uint8), output_folder+f'/{name}_icon.mp4', config, mouse_icon, mouse_scale=0.1, mode=mode)
-        process_video(video.astype(np.uint8), output_folder+f'/{name}.mp4', config, mouse_icon, mouse_scale=0.1, process_icon=False, mode=mode)
+            if profile:
+                torch.cuda.synchronize()
+                diffusion_end.record()
+                diffusion_time = diffusion_start.elapsed_time(diffusion_end)
+                print(f"diffusion_time: {diffusion_time}", flush=True)
+                fps = video.shape[1]*1000/ diffusion_time
+                print(f"  - FPS: {fps:.2f}")
 
         if return_latents:
             return output
-        return video
-    
+        return videos
+        
     def inference_modular(
         self,
         noise: torch.Tensor,
