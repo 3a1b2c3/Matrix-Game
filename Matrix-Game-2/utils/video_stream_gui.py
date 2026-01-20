@@ -1,10 +1,10 @@
 import pygame
 import numpy as np
-import random
+from typing import List
 
-def generate_random_frame(width: int, height: int) -> np.ndarray:
+def external_frame_source(width: int, height: int) -> np.ndarray:
     """
-    Generates a random frame where the entire frame has the same random color.
+    External frame source that generates a random frame where the entire frame has the same random color.
 
     Args:
         width (int): Width of the frame.
@@ -18,33 +18,63 @@ def generate_random_frame(width: int, height: int) -> np.ndarray:
     # Fill the entire frame with the same color
     return np.tile(color, (height, width, 1))
 
-def main():
+def main(frame_source):
     # Initialize pygame
     pygame.init()
 
     # Set up display
     width, height = 640, 480
     screen = pygame.display.set_mode((width, height))
-    pygame.display.set_caption("Random Video Stream")
+    pygame.display.set_caption("Event Recorder")
+
+    # Font for displaying events
+    font = pygame.font.Font(None, 24)
 
     # Clock for controlling frame rate
     clock = pygame.time.Clock()
     fps = 30
+
+    # List to store recent events
+    event_log: List[str] = []
+    max_events = 4  # Maximum number of events to display
 
     running = True
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            elif event.type in (pygame.KEYDOWN, pygame.KEYUP):
+                # Record key press/release events
+                event_type = "KEYDOWN" if event.type == pygame.KEYDOWN else "KEYUP"
+                event_log.append(f"{event_type}: {pygame.key.name(event.key)}")
+            elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+                # Record mouse button events
+                event_type = "MOUSEDOWN" if event.type == pygame.MOUSEBUTTONDOWN else "MOUSEUP"
+                event_log.append(f"{event_type}: Button {event.button} at {event.pos}")
+            elif event.type == pygame.MOUSEMOTION:
+                # Record mouse motion events
+                event_log.append(f"MOUSEMOVE: {event.pos}")
 
-        # Generate a random frame
-        frame = generate_random_frame(width, height)
+            # Keep the event log size within the limit
+            if len(event_log) > max_events:
+                event_log.pop(0)
+
+        # Get a frame from the external frame source
+        frame = frame_source(width, height)
 
         # Convert the NumPy array to a pygame Surface
         frame_surface = pygame.surfarray.make_surface(frame)
 
         # Display the frame
         screen.blit(frame_surface, (0, 0))
+
+        # Render the event log on the screen
+        y_offset = 10
+        for log in event_log:
+            text_surface = font.render(log, True, (255, 255, 255))
+            screen.blit(text_surface, (10, y_offset))
+            y_offset += 20
+
         pygame.display.flip()
 
         # Cap the frame rate
@@ -53,4 +83,4 @@ def main():
     pygame.quit()
 
 if __name__ == "__main__":
-    main()
+    main(external_frame_source)
