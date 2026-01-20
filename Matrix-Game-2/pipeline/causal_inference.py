@@ -25,13 +25,13 @@ KEYBOARD_IDX = {
             "q": [0, 0, 0, 0]
         }
 # Global variable to track the stop flag
-stop_flag = [False]
+stop_flag = ['x']
 
 def on_press(key):
     try:
-        if key.char == 'n':
+        if key.char == 'n' or  key.char in KEYBOARD_IDX:
             global stop_flag
-            stop_flag[0] = True
+            stop_flag[0] = key.char 
     except AttributeError:
        pass
 
