@@ -683,17 +683,18 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
 
                 # Release OpenCV resources
                 #cv2.destroyAllWindows()
-            mouse_icon = 'assets/images/mouse.png'
-            if mode != 'templerun':
-                config = (
-                    conditional_dict["keyboard_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy(),
-                    conditional_dict["mouse_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy(),
-                )
-            else:
-                config = (
-                    conditional_dict["keyboard_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy()
-                )
             if export:
+                mouse_icon = 'assets/images/mouse.png'
+                if mode != 'templerun':
+                    config = (
+                        conditional_dict["keyboard_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy(),
+                        conditional_dict["mouse_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy(),
+                    )
+                else:
+                    config = (
+                        conditional_dict["keyboard_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy()
+                    )
+
                 process_video(video.astype(np.uint8), output_folder+f'/{name}_current.mp4', config, mouse_icon, mouse_scale=0.1, process_icon=False, mode=mode)
             current_start_frame += current_num_frames
 
