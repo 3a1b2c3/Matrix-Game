@@ -13,26 +13,27 @@ import torch.nn.functional as F
 from demo_utils.constant import ZERO_VAE_CACHE
 from tqdm import tqdm
 
-def get_current_action(mode: str = "universal") -> Dict[str, torch.Tensor]:
-
-    CAM_VALUE = 0.1
-    if mode == 'universal':
-        print()
-        print('-'*30)
-        print("PRESS [I, K, J, L, U] FOR CAMERA TRANSFORM\n (I: up, K: down, J: left, L: right, U: no move)")
-        print("PRESS [W, S, A, D, Q] FOR MOVEMENT\n (W: forward, S: back, A: left, D: right, Q: no move)")
-        print('-'*30)
-        CAMERA_VALUE_MAP = {
+CAM_VALUE = 0.1
+CAMERA_VALUE_MAP = {
             "i":  [CAM_VALUE, 0],
             "k":  [-CAM_VALUE, 0],
             "j":  [0, -CAM_VALUE],
             "l":  [0, CAM_VALUE],
             "u":  [0, 0]
         }
-        KEYBOARD_IDX = { 
+KEYBOARD_IDX = { 
             "w": [1, 0, 0, 0], "s": [0, 1, 0, 0], "a": [0, 0, 1, 0], "d": [0, 0, 0, 1],
             "q": [0, 0, 0, 0]
         }
+
+def get_current_action(mode: str = "universal") -> Dict[str, torch.Tensor]:
+    if mode == 'universal':
+        print()
+        print('-'*30)
+        print("PRESS [I, K, J, L, U] FOR CAMERA TRANSFORM\n (I: up, K: down, J: left, L: right, U: no move)")
+        print("PRESS [W, S, A, D, Q] FOR MOVEMENT\n (W: forward, S: back, A: left, D: right, Q: no move)")
+        print('-'*30)
+
         flag = 0
         while flag != 1:
             try:
