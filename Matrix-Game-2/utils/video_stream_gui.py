@@ -1,9 +1,8 @@
-from turtle import mode
 import pygame
 import numpy as np
 from typing import List, Callable
 
-from pipeline.causal_inference import CAMERA_VALUE_MAP,KEYBOARD_IDX
+from pipeline.causal_inference import CAMERA_VALUE_MAP,KEYBOARD_IDX, cond_current
 
 def external_frame_source(width: int, height: int, event_log: List[str]) -> np.ndarray:
     """
