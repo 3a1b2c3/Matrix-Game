@@ -1,6 +1,6 @@
 import pygame
 import numpy as np
-from typing import List
+from typing import List, Callable
 
 def external_frame_source(width: int, height: int, event_log: List[str]) -> np.ndarray:
     """
@@ -25,7 +25,7 @@ def external_frame_source(width: int, height: int, event_log: List[str]) -> np.n
 
     return frame
 
-def main(frame_source, width=640, height=480):
+def run_ui(frame_source: Callable[[int, int, List[str]], np.ndarray], width: int = 640, height: int = 480) -> None:
     # Initialize pygame
     pygame.init()
 
@@ -98,4 +98,4 @@ def main(frame_source, width=640, height=480):
     pygame.quit()
 
 if __name__ == "__main__":
-    main(external_frame_source)
+    run_ui(external_frame_source)
