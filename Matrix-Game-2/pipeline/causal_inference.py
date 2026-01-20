@@ -41,8 +41,10 @@ def on_press(key: keyboard.Key) -> None:
         pass
 
 
-def get_current_action(mode="universal"):
-
+def get_current_action(mode: str = "universal") -> Dict[str, torch.Tensor]:
+    """
+    Get the current action based on the mode.
+    """
     CAM_VALUE = 0.1
     if mode == 'universal':
         print()
@@ -126,7 +128,16 @@ def get_current_action(mode="universal"):
         "keyboard": keyboard_cond
     }
 
-def cond_current(conditional_dict, current_start_frame, num_frame_per_block, replace=None, mode='universal'):
+def cond_current(
+    conditional_dict: Dict[str, torch.Tensor],
+    current_start_frame: int,
+    num_frame_per_block: int,
+    replace: Optional[Dict[str, torch.Tensor]] = None,
+    mode: str = 'universal'
+) -> Union[Dict[str, torch.Tensor], Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]]:
+    """
+    Update the conditional dictionary based on the current frame and mode.
+    """
     
     new_cond = {}
     
@@ -152,12 +163,12 @@ def cond_current(conditional_dict, current_start_frame, num_frame_per_block, rep
 
 class CausalInferencePipeline(torch.nn.Module):
     def __init__(
-            self,
-            args,
-            device="cuda",
-            generator=None,
-            vae_decoder=None,
-    ):
+        self,
+        args: Any,
+        device: str = "cuda",
+        generator: Optional[WanDiffusionWrapper] = None,
+        vae_decoder: Optional[WanVAEWrapper] = None,
+    ) -> None:
         super().__init__()
         # Step 1: Initialize all models
         self.generator = WanDiffusionWrapper(
@@ -190,12 +201,12 @@ class CausalInferencePipeline(torch.nn.Module):
     def inference(
         self,
         noise: torch.Tensor,
-        conditional_dict,
-        initial_latent = None,
-        return_latents = False,
-        mode = 'universal',
-        profile = False,
-    ) -> torch.Tensor:
+        conditional_dict: Dict[str, torch.Tensor],
+        initial_latent: Optional[torch.Tensor] = None,
+        return_latents: bool = False,
+        mode: str = 'universal',
+        profile: bool = False,
+    ) -> Union[torch.Tensor, List[torch.Tensor]]:
         """
         Perform inference on the given noise and text prompts.
         Inputs:
@@ -385,7 +396,7 @@ class CausalInferencePipeline(torch.nn.Module):
         else:
             return videos
 
-    def _initialize_kv_cache(self, batch_size, dtype, device):
+    def _initialize_kv_cache(self, batch_size: int, dtype: torch.dtype, device: str) -> None:
         """
         Initialize a Per-GPU KV cache for the Wan model.
         """
@@ -407,7 +418,7 @@ class CausalInferencePipeline(torch.nn.Module):
 
         self.kv_cache1 = kv_cache1  # always store the clean cache
 
-    def _initialize_kv_cache_mouse_and_keyboard(self, batch_size, dtype, device):
+    def _initialize_kv_cache_mouse_and_keyboard(self, batch_size: int, dtype: torch.dtype, device: str) -> None:
         """
         Initialize a Per-GPU KV cache for the Wan model.
         """
@@ -435,7 +446,7 @@ class CausalInferencePipeline(torch.nn.Module):
 
         
 
-    def _initialize_crossattn_cache(self, batch_size, dtype, device):
+    def _initialize_crossattn_cache(self, batch_size: int, dtype: torch.dtype, device: str) -> None:
         """
         Initialize a Per-GPU cross-attention cache for the Wan model.
         """
@@ -452,12 +463,12 @@ class CausalInferencePipeline(torch.nn.Module):
 
 class CausalInferenceStreamingPipeline(torch.nn.Module):
     def __init__(
-            self,
-            args,
-            device="cuda",
-            vae_decoder=None,
-            generator=None,
-    ):
+        self,
+        args: Any,
+        device: str = "cuda",
+        vae_decoder: Optional[WanVAEWrapper] = None,
+        generator: Optional[WanDiffusionWrapper] = None,
+    ) -> None:
         super().__init__()
         # Step 1: Initialize all models
         self.generator = WanDiffusionWrapper(
@@ -493,14 +504,14 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
     def inference(
         self,
         noise: torch.Tensor,
-        conditional_dict,
+        conditional_dict: Dict[str, torch.Tensor],
         initial_latent: Optional[torch.Tensor] = None,
         return_latents: bool = False,
-        output_folder = None,
-        name = None,
-        mode = 'universal',
+        output_folder: Optional[str] = None,
+        name: Optional[str] = None,
+        mode: str = 'universal',
         export: bool = False,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, List[torch.Tensor]]:
         """
         Perform inference on the given noise and text prompts.
         Inputs:
@@ -776,7 +787,11 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
 
                 #current_actions = get_current_action(mode=mode)
                 mouse_cond = torch.tensor(CAMERA_VALUE_MAP[g_idx_mouse[0]]).cuda()
-                keyboard_cond = torch.tensor(KEYBOARD_IDX[idx_keyboard[0]]).cuda()
+                keyboard_cond = torch.tensor(KEYBOARD_IDX[g_idx_keyboard[0]]).cuda()
+                current_actions=  {
+                    "mouse": mouse_cond,
+                    "keyboard": keyboard_cond
+                    }
                 new_act, conditional_dict = cond_current(
                     conditional_dict, current_start_frame, self.num_frame_per_block, replace=current_actions, mode=mode
                 )
@@ -860,7 +875,7 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
             ]
             output[:, :, current_start_frame:current_start_frame + self.num_frame_per_block] = current_ref_latents
             self.generator(
-                noisy_image_or_video=current_ref_latants,
+                noisy_image_or_video=current_ref_latents,
                 conditional_dict=cond_current(conditional_dict, current_start_frame, self.num_frame_per_block, replace=True),
                 timestep=timestep * 0,
                 kv_cache=self.kv_cache1,
