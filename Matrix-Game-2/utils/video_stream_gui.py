@@ -2,13 +2,15 @@ import pygame
 import numpy as np
 from typing import List
 
-def external_frame_source(width: int, height: int) -> np.ndarray:
+def external_frame_source(width: int, height: int, event_log: List[str]) -> np.ndarray:
     """
     External frame source that generates a random frame where the entire frame has the same random color.
+    Additionally, it can use the event log for further processing (if needed).
 
     Args:
         width (int): Width of the frame.
         height (int): Height of the frame.
+        event_log (List[str]): List of recent events.
 
     Returns:
         np.ndarray: Randomly generated frame as a NumPy array.
@@ -16,14 +18,18 @@ def external_frame_source(width: int, height: int) -> np.ndarray:
     # Generate a single random color
     color = np.random.randint(0, 256, (1, 1, 3), dtype=np.uint8)
     # Fill the entire frame with the same color
-    return np.tile(color, (height, width, 1))
+    frame = np.tile(color, (height, width, 1))
 
-def main(frame_source):
+    # Example usage of event_log (currently unused, but passed for future use)
+    # You can process the event_log here if needed.
+
+    return frame
+
+def main(frame_source, width=640, height=480):
     # Initialize pygame
     pygame.init()
 
     # Set up display
-    width, height = 640, 480
     screen = pygame.display.set_mode((width, height))
     pygame.display.set_caption("Event Recorder")
 
@@ -34,9 +40,10 @@ def main(frame_source):
     clock = pygame.time.Clock()
     fps = 30
 
-    # List to store recent events
-    event_log: List[str] = []
-    max_events = 4  # Maximum number of events to display
+    # Separate logs for keyboard and mouse events
+    keyboard_event_log: List[str] = []
+    mouse_event_log: List[str] = []
+    max_events = 4  # Maximum number of events to display per log
 
     running = True
     while running:
@@ -46,21 +53,23 @@ def main(frame_source):
             elif event.type in (pygame.KEYDOWN, pygame.KEYUP):
                 # Record key press/release events
                 event_type = "KEYDOWN" if event.type == pygame.KEYDOWN else "KEYUP"
-                event_log.append(f"{event_type}: {pygame.key.name(event.key)}")
+                keyboard_event_log.append(f"{event_type}: {pygame.key.name(event.key)}")
+                if len(keyboard_event_log) > max_events:
+                    keyboard_event_log.pop(0)
             elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
                 # Record mouse button events
                 event_type = "MOUSEDOWN" if event.type == pygame.MOUSEBUTTONDOWN else "MOUSEUP"
-                event_log.append(f"{event_type}: Button {event.button} at {event.pos}")
+                mouse_event_log.append(f"{event_type}: Button {event.button} at {event.pos}")
+                if len(mouse_event_log) > max_events:
+                    mouse_event_log.pop(0)
             elif event.type == pygame.MOUSEMOTION:
                 # Record mouse motion events
-                event_log.append(f"MOUSEMOVE: {event.pos}")
+                mouse_event_log.append(f"MOUSEMOVE: {event.pos}")
+                if len(mouse_event_log) > max_events:
+                    mouse_event_log.pop(0)
 
-            # Keep the event log size within the limit
-            if len(event_log) > max_events:
-                event_log.pop(0)
-
-        # Get a frame from the external frame source
-        frame = frame_source(width, height)
+        # Get a frame from the external frame source, passing both logs
+        frame = frame_source(width, height, keyboard_event_log + mouse_event_log)
 
         # Convert the NumPy array to a pygame Surface
         frame_surface = pygame.surfarray.make_surface(frame)
@@ -68,10 +77,16 @@ def main(frame_source):
         # Display the frame
         screen.blit(frame_surface, (0, 0))
 
-        # Render the event log on the screen
+        # Render the keyboard event log on the screen
         y_offset = 10
-        for log in event_log:
-            text_surface = font.render(log, True, (255, 255, 255))
+        for log in keyboard_event_log:
+            text_surface = font.render(f"Keyboard: {log}", True, (255, 255, 255))
+            screen.blit(text_surface, (10, y_offset))
+            y_offset += 20
+
+        # Render the mouse event log on the screen
+        for log in mouse_event_log:
+            text_surface = font.render(f"Mouse: {log}", True, (255, 255, 255))
             screen.blit(text_surface, (10, y_offset))
             y_offset += 20
 
