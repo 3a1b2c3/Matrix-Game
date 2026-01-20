@@ -28,12 +28,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config_path", type=str, default="configs/inference_yaml/inference_universal.yaml", help="Path to the config file")
     parser.add_argument("--checkpoint_path", type=str, default="", help="Path to the checkpoint")
     parser.add_argument("--output_folder", type=str, default="./outputs/", help="Output folder")
+    parser.add_argument("--img_path", type=str, default="demo_images/universal/0000.png", help="Path to the image")
     parser.add_argument("--max_num_output_frames", type=int, default=360,
                         help="Max number of output latent frames")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--pretrained_model_path", type=str, default="Matrix-Game-2.0", help="Path to the VAE model folder")
     args = parser.parse_args()
     return args
+
 
 class InteractiveGameInference:
     """
@@ -134,7 +136,7 @@ class InteractiveGameInference:
         image = image.crop((left, top, right, bottom))
         return image
 
-    def generate_videos(self, mode: str = 'universal', img_path=None) -> None:
+    def generate_videos(self, mode: str = 'universal', img_path=None, export=True) -> None:
         """
         Generate videos based on the specified mode.
 
@@ -196,7 +198,8 @@ class InteractiveGameInference:
                 return_latents=False,
                 output_folder=self.args.output_folder,
                 name=os.path.basename(img_path),
-                mode=mode
+                mode=mode,
+                export=export
             )
             return videos
 
