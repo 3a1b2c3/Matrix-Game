@@ -1,8 +1,10 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Union, Tuple
+from nbconvert import export
 import numpy as np
 import torch
 import time
 import copy
+import cv2  # Add OpenCV import for drawing the output
 
 from einops import rearrange
 from utils.wan_wrapper import WanDiffusionWrapper, WanVAEWrapper
@@ -11,7 +13,7 @@ import torch.nn.functional as F
 from demo_utils.constant import ZERO_VAE_CACHE
 from tqdm import tqdm
 
-def get_current_action(mode="universal"):
+def get_current_action(mode: str = "universal") -> Dict[str, torch.Tensor]:
 
     CAM_VALUE = 0.1
     if mode == 'universal':
@@ -107,7 +109,13 @@ def get_current_action(mode="universal"):
         "keyboard": keyboard_cond
     }
 
-def cond_current(conditional_dict, current_start_frame, num_frame_per_block, replace=None, mode='universal'):
+def cond_current(
+    conditional_dict: Dict[str, torch.Tensor],
+    current_start_frame: int,
+    num_frame_per_block: int,
+    replace: Optional[Dict[str, torch.Tensor]] = None,
+    mode: str = 'universal'
+) -> Union[Dict[str, torch.Tensor], Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]]:
     
     new_cond = {}
     
@@ -133,12 +141,12 @@ def cond_current(conditional_dict, current_start_frame, num_frame_per_block, rep
 
 class CausalInferencePipeline(torch.nn.Module):
     def __init__(
-            self,
-            args,
-            device="cuda",
-            generator=None,
-            vae_decoder=None,
-    ):
+        self,
+        args: object,
+        device: str = "cuda",
+        generator: Optional[WanDiffusionWrapper] = None,
+        vae_decoder: Optional[WanVAEWrapper] = None,
+    ) -> None:
         super().__init__()
         # Step 1: Initialize all models
         self.generator = WanDiffusionWrapper(
@@ -171,12 +179,12 @@ class CausalInferencePipeline(torch.nn.Module):
     def inference(
         self,
         noise: torch.Tensor,
-        conditional_dict,
-        initial_latent = None,
-        return_latents = False,
-        mode = 'universal',
-        profile = False,
-    ) -> torch.Tensor:
+        conditional_dict: Dict[str, torch.Tensor],
+        initial_latent: Optional[torch.Tensor] = None,
+        return_latents: bool = False,
+        mode: str = 'universal',
+        profile: bool = False,
+    ) -> Union[torch.Tensor, List[torch.Tensor]]:
         """
         Perform inference on the given noise and text prompts.
         Inputs:
@@ -332,6 +340,10 @@ class CausalInferencePipeline(torch.nn.Module):
             # Step 3.2: record the model's output
             output[:, :, current_start_frame:current_start_frame + current_num_frames] = denoised_pred
 
+            # Draw the output tensor as a video using OpenCV
+            video_frames = denoised_pred.transpose(1, 2)  # Rearrange to (B, T, C, H, W)
+            video_frames = video_frames.permute(0, 1, 3, 4, 2)  # Convert to (B, T, H, W, C)
+            video_frames = ((video_frames + 1) * 127.5).clip(0, 255).cpu().numpy().astype(np.uint8)  # Normalize to [0, 255]
             # Step 3.3: rerun with timestep zero to update KV cache using clean context
             context_timestep = torch.ones_like(timestep) * self.args.context_noise
             
@@ -366,7 +378,9 @@ class CausalInferencePipeline(torch.nn.Module):
         else:
             return videos
 
-    def _initialize_kv_cache(self, batch_size, dtype, device):
+    def _initialize_kv_cache(
+        self, batch_size: int, dtype: torch.dtype, device: torch.device
+    ) -> None:
         """
         Initialize a Per-GPU KV cache for the Wan model.
         """
@@ -388,7 +402,9 @@ class CausalInferencePipeline(torch.nn.Module):
 
         self.kv_cache1 = kv_cache1  # always store the clean cache
 
-    def _initialize_kv_cache_mouse_and_keyboard(self, batch_size, dtype, device):
+    def _initialize_kv_cache_mouse_and_keyboard(
+        self, batch_size: int, dtype: torch.dtype, device: torch.device
+    ) -> None:
         """
         Initialize a Per-GPU KV cache for the Wan model.
         """
@@ -433,12 +449,12 @@ class CausalInferencePipeline(torch.nn.Module):
 
 class CausalInferenceStreamingPipeline(torch.nn.Module):
     def __init__(
-            self,
-            args,
-            device="cuda",
-            vae_decoder=None,
-            generator=None,
-    ):
+        self,
+        args: object,
+        device: str = "cuda",
+        vae_decoder: Optional[WanVAEWrapper] = None,
+        generator: Optional[WanDiffusionWrapper] = None,
+    ) -> None:
         super().__init__()
         # Step 1: Initialize all models
         self.generator = WanDiffusionWrapper(
@@ -471,13 +487,14 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
     def inference(
         self,
         noise: torch.Tensor,
-        conditional_dict,
+        conditional_dict: Dict[str, torch.Tensor],
         initial_latent: Optional[torch.Tensor] = None,
         return_latents: bool = False,
-        output_folder = None,
-        name = None,
-        mode = 'universal'
-    ) -> torch.Tensor:
+        output_folder: Optional[str] = None,
+        name: Optional[str] = None,
+        mode: str = 'universal',
+        export: bool = False,
+    ) -> Union[torch.Tensor, List[torch.Tensor]]:
         """
         Perform inference on the given noise and text prompts.
         Inputs:
@@ -586,7 +603,7 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
             current_actions = get_current_action(mode=mode)
             new_act, conditional_dict = cond_current(conditional_dict, current_start_frame, self.num_frame_per_block, replace=current_actions, mode=mode)
             # Step 3.1: Spatial denoising loop
-
+            print("current_num_frames: ", num_input_frames, current_num_frames, export)
             for index, current_timestep in enumerate(self.denoising_step_list):
                 # set current timestep
                 timestep = torch.ones(
@@ -628,7 +645,7 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
 
             # Step 3.2: record the model's output
             output[:, :, current_start_frame:current_start_frame + current_num_frames] = denoised_pred
-
+            
             # Step 3.3: rerun with timestep zero to update KV cache using clean context
             context_timestep = torch.ones_like(timestep) * self.args.context_noise
             
@@ -650,6 +667,22 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
             video = rearrange(video, "B T C H W -> B T H W C")
             video = ((video.float() + 1) * 127.5).clip(0, 255).cpu().numpy().astype(np.uint8)[0]
             video = np.ascontiguousarray(video)
+            if not export:
+                for i, frame in enumerate(video):
+                    # Convert the frame to BGR format (if needed)
+                    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    # Add text to the frame
+                    cv2.putText(frame_bgr, f"Frame {i}", (60, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+
+                    # Display the frame
+                    cv2.imshow("Video Frame " + str(i), frame_bgr)
+
+                    ## Wait for a short period (e.g., 30ms) and check for 'q' to quit
+                    #if cv2.waitKey(30) & 0xFF == ord('q'):
+                    #    break
+
+                # Release OpenCV resources
+                #cv2.destroyAllWindows()
             mouse_icon = 'assets/images/mouse.png'
             if mode != 'templerun':
                 config = (
@@ -660,35 +693,39 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
                 config = (
                     conditional_dict["keyboard_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy()
                 )
-            process_video(video.astype(np.uint8), output_folder+f'/{name}_current.mp4', config, mouse_icon, mouse_scale=0.1, process_icon=False, mode=mode)
+            if export:
+                process_video(video.astype(np.uint8), output_folder+f'/{name}_current.mp4', config, mouse_icon, mouse_scale=0.1, process_icon=False, mode=mode)
             current_start_frame += current_num_frames
 
-            if input("Continue? (Press `n` to break)").strip() == "n":
+            if input(str(current_num_frames) + " Continue? (Press `n` to break)").strip() == "n":
                 break
                 
+        if return_latents:
+            return output
+        
         videos_tensor = torch.cat(videos, dim=1)
         videos = rearrange(videos_tensor, "B T C H W -> B T H W C")
         videos = ((videos.float() + 1) * 127.5).clip(0, 255).cpu().numpy().astype(np.uint8)[0]
         video = np.ascontiguousarray(videos)
-        mouse_icon = 'assets/images/mouse.png'
-        if mode != 'templerun':
-            config = (
-                conditional_dict["keyboard_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy(),
-                conditional_dict["mouse_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy(),
-            )
-        else:
-            config = (
-                conditional_dict["keyboard_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy()
-            )
-        process_video(video.astype(np.uint8), output_folder+f'/{name}_icon.mp4', config, mouse_icon, mouse_scale=0.1, mode=mode)
-        process_video(video.astype(np.uint8), output_folder+f'/{name}.mp4', config, mouse_icon, mouse_scale=0.1, process_icon=False, mode=mode)
+        if export:
+            mouse_icon = 'assets/images/mouse.png'
+            if mode != 'templerun':
+                config = (
+                    conditional_dict["keyboard_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy(),
+                    conditional_dict["mouse_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy(),
+                )
+            else:
+                config = (
+                    conditional_dict["keyboard_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy()
+                )
 
-        if return_latents:
-            return output
-        else:
-            return video
+            process_video(video.astype(np.uint8), output_folder+f'/{name}_icon.mp4', config, mouse_icon, mouse_scale=0.1, mode=mode)
+            process_video(video.astype(np.uint8), output_folder+f'/{name}.mp4', config, mouse_icon, mouse_scale=0.1, process_icon=False, mode=mode)
+        return video
 
-    def _initialize_kv_cache(self, batch_size, dtype, device):
+    def _initialize_kv_cache(
+        self, batch_size: int, dtype: torch.dtype, device: torch.device
+    ) -> None:
         """
         Initialize a Per-GPU KV cache for the Wan model.
         """
@@ -710,7 +747,9 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
 
         self.kv_cache1 = kv_cache1  # always store the clean cache
 
-    def _initialize_kv_cache_mouse_and_keyboard(self, batch_size, dtype, device):
+    def _initialize_kv_cache_mouse_and_keyboard(
+        self, batch_size: int, dtype: torch.dtype, device: torch.device
+    ) -> None:
         """
         Initialize a Per-GPU KV cache for the Wan model.
         """

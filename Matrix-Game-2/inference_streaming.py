@@ -18,6 +18,12 @@ from utils.wan_wrapper import WanDiffusionWrapper
 from safetensors.torch import load_file
 
 def parse_args() -> argparse.Namespace:
+    """
+    Parse command-line arguments for the inference script.
+
+    Returns:
+        argparse.Namespace: Parsed arguments.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", type=str, default="configs/inference_yaml/inference_universal.yaml", help="Path to the config file")
     parser.add_argument("--checkpoint_path", type=str, default="", help="Path to the checkpoint")
@@ -30,7 +36,26 @@ def parse_args() -> argparse.Namespace:
     return args
 
 class InteractiveGameInference:
+    """
+    A class to handle interactive game inference for generating videos.
+
+    Attributes:
+        args (argparse.Namespace): Command-line arguments.
+        device (torch.device): Device to run the inference on.
+        weight_dtype (torch.dtype): Data type for model weights.
+        config (OmegaConf): Configuration loaded from the YAML file.
+        pipeline (CausalInferenceStreamingPipeline): Inference pipeline.
+        vae (Any): VAE model for encoding and decoding.
+        frame_process (torchvision.transforms.Compose): Preprocessing pipeline for input frames.
+    """
+
     def __init__(self, args: argparse.Namespace) -> None:
+        """
+        Initialize the InteractiveGameInference class.
+
+        Args:
+            args (argparse.Namespace): Command-line arguments.
+        """
         self.args: argparse.Namespace = args
         self.device: torch.device = torch.device("cuda")
         self.weight_dtype: torch.dtype = torch.bfloat16
@@ -45,9 +70,15 @@ class InteractiveGameInference:
         ])
 
     def _init_config(self) -> None:
+        """
+        Load the configuration file specified in the arguments.
+        """
         self.config: OmegaConf = OmegaConf.load(self.args.config_path)
 
     def _init_models(self) -> None:
+        """
+        Initialize the models, including the pipeline, VAE decoder, and generator.
+        """
         # Initialize pipeline
         generator = WanDiffusionWrapper(
             **getattr(self.config, "model_kwargs", {}), is_causal=True)
@@ -78,6 +109,17 @@ class InteractiveGameInference:
         self.vae: Any = vae.to(self.device, self.weight_dtype)
 
     def _resizecrop(self, image: Any, th: int, tw: int) -> Any:
+        """
+        Resize and crop an image to the target dimensions.
+
+        Args:
+            image (Any): Input image.
+            th (int): Target height.
+            tw (int): Target width.
+
+        Returns:
+            Any: Resized and cropped image.
+        """
         w, h = image.size
         if h / w > th / tw:
             new_w = int(w)
@@ -92,10 +134,16 @@ class InteractiveGameInference:
         image = image.crop((left, top, right, bottom))
         return image
 
-    def generate_videos(self, mode: str = 'universal') -> None:
+    def generate_videos(self, mode: str = 'universal', img_path=None) -> None:
+        """
+        Generate videos based on the specified mode.
+
+        Args:
+            mode (str): Mode of video generation. Options are 'universal', 'gta_drive', and 'templerun'.
+        """
         assert mode in ['universal', 'gta_drive', 'templerun']
-        image = None
-        while True:
+        image = load_image(img_path.strip()) if img_path else None
+        while True and not img_path:
             try:
                 img_path = input("Please input the image path: ")
                 image = load_image(img_path.strip())
@@ -150,18 +198,26 @@ class InteractiveGameInference:
                 name=os.path.basename(img_path),
                 mode=mode
             )
-           
+            return videos
 
 def main() -> None:
-    """Main entry point for video generation."""
+    """
+    Main entry point for video generation. Parses arguments, sets up the pipeline,
+    and starts the video generation loop.
+    """
     args: argparse.Namespace = parse_args()
     set_seed(args.seed)
     os.makedirs(args.output_folder, exist_ok=True)
     pipeline = InteractiveGameInference(args)
     mode = pipeline.config.pop('mode')
-    stop = ''
-    while stop != 'n':
-        pipeline.generate_videos(mode)
-        stop = input("Press `n` to stop generation: ").strip().lower()
+    export = False
+
+    while True:
+        videos = pipeline.generate_videos(mode, img_path=None, export=export)
+        print("videos", videos.shape)
+        stop = input("Press `n` to stop generation or any other key to continue: ").strip().lower()
+        if stop == 'n':
+            break
+
 if __name__ == "__main__":
     main()
