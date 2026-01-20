@@ -472,10 +472,12 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
         self,
         noise: torch.Tensor,
         conditional_dict,
-        initial_latent = None,
-        return_latents = False,
+        initial_latent: Optional[torch.Tensor] = None,
+        return_latents: bool = False,
+        output_folder = None,
+        name = None,
         mode = 'universal',
-        profile = False,
+        export = False,
     ) -> torch.Tensor:
         """
         Perform inference on the given noise and text prompts.
@@ -673,7 +675,8 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
         return_latents: bool = False,
         output_folder = None,
         name = None,
-        mode = 'universal'
+        mode = 'universal',
+        export = False,
     ) -> torch.Tensor:
         """
         Perform inference on the given noise and text prompts.
