@@ -487,6 +487,9 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
         if self.num_frame_per_block > 1:
             self.generator.model.num_frame_per_block = self.num_frame_per_block
 
+        self.listener = keyboard.Listener(on_press=on_press)
+        self.listener.start()
+
     def inference(
         self,
         noise: torch.Tensor,
@@ -761,38 +764,41 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
             )
 
         all_num_frames = [self.num_frame_per_block] * num_blocks
-        for current_num_frames in all_num_frames:
-            noisy_input = noise[
-                :, :, current_start_frame - num_input_frames:current_start_frame + current_num_frames - num_input_frames
-            ]
+        try:
+            for current_num_frames in all_num_frames:
+                noisy_input = noise[
+                    :, :, current_start_frame - num_input_frames:current_start_frame + current_num_frames - num_input_frames
+                ]
 
-            #current_actions = get_current_action(mode=mode)
-            mouse_cond = torch.tensor(CAMERA_VALUE_MAP[idx_mouse[0]]).cuda()
-            keyboard_cond = torch.tensor(KEYBOARD_IDX[idx_keyboard[0]]).cuda()
-            new_act, conditional_dict = cond_current(
-                conditional_dict, current_start_frame, self.num_frame_per_block, replace=current_actions, mode=mode
-            )
+                #current_actions = get_current_action(mode=mode)
+                mouse_cond = torch.tensor(CAMERA_VALUE_MAP[idx_mouse[0]]).cuda()
+                keyboard_cond = torch.tensor(KEYBOARD_IDX[idx_keyboard[0]]).cuda()
+                new_act, conditional_dict = cond_current(
+                    conditional_dict, current_start_frame, self.num_frame_per_block, replace=current_actions, mode=mode
+                )
 
-            denoised_pred = self._perform_denoising_loop(
-                noisy_input, new_act, current_start_frame, current_num_frames
-            )
+                denoised_pred = self._perform_denoising_loop(
+                    noisy_input, new_act, current_start_frame, current_num_frames
+                )
 
-            output[:, :, current_start_frame:current_start_frame + current_num_frames] = denoised_pred
+                output[:, :, current_start_frame:current_start_frame + current_num_frames] = denoised_pred
 
-            self._update_kv_cache_with_clean_context(denoised_pred, new_act, current_start_frame)
+                self._update_kv_cache_with_clean_context(denoised_pred, new_act, current_start_frame)
 
-            video = self._process_video_output(
-                denoised_pred, vae_cache, conditional_dict, output_folder, name, current_start_frame, mode
-            )
-            videos.append(video)
+                video = self._process_video_output(
+                    denoised_pred, vae_cache, conditional_dict, output_folder, name, current_start_frame, mode
+                )
+                videos.append(video)
 
-            current_start_frame += current_num_frames
+                current_start_frame += current_num_frames
 
-            # Stop if the 'n' key is pressed
-            if stop_flag[0] == 'n':
-                print("Stopping inference as 'n' key was pressed.")
-                self.listener.stop()
-                break
+                # Stop if the 'n' key is pressed
+                if stop_flag[0] == 'n':
+                    print("Stopping inference as 'n' key was pressed.")
+                    self.listener.stop()
+                    break
+        finally:
+            self.listener.stop()
         return self._finalize_videos(videos, conditional_dict, output_folder, name, current_start_frame, mode, return_latents, output)
 
     def _initialize_vae_cache(self) -> List[Optional[torch.Tensor]]:
@@ -850,7 +856,7 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
             ]
             output[:, :, current_start_frame:current_start_frame + self.num_frame_per_block] = current_ref_latents
             self.generator(
-                noisy_image_or_video=current_ref_latents,
+                noisy_image_or_video=current_ref_latants,
                 conditional_dict=cond_current(conditional_dict, current_start_frame, self.num_frame_per_block, replace=True),
                 timestep=timestep * 0,
                 kv_cache=self.kv_cache1,
