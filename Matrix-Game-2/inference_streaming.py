@@ -193,17 +193,27 @@ class InteractiveGameInference:
         conditional_dict['keyboard_cond'] = keyboard_condition
         
         with torch.no_grad():
-            videos = self.pipeline.inference(
-                noise=sampled_noise,
-                conditional_dict=conditional_dict,
-                return_latents=False,
-                output_folder=self.args.output_folder,
-                name=os.path.basename(img_path),
-                mode=mode,
-                export=export
-            )
+            if False:
+                videos = self.pipeline.inference(
+                    noise=sampled_noise,
+                    conditional_dict=conditional_dict,
+                    return_latents=False,
+                    output_folder=self.args.output_folder,
+                    name=os.path.basename(img_path),
+                    mode=mode,
+                    export=export
+                )
+                return videos
+            videos = self.pipeline.inference_modular(
+                    noise=sampled_noise,
+                    conditional_dict=conditional_dict,
+                    return_latents=False,
+                    output_folder=self.args.output_folder,
+                    name=os.path.basename(img_path),
+                    mode=mode,
+                    export=export
+                )
             return videos
-
 def main() -> None:
     """
     Main entry point for video generation. Parses arguments, sets up the pipeline,
