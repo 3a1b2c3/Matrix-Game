@@ -27,7 +27,7 @@ KEYBOARD_IDX = {
 # Global variable to track the stop flag
 stop_flag = ['x']
 idx_mouse= [] 
-idx_keyboard = [] 
+g_idx_keyboard = [] 
 
 def on_press(key: keyboard.Key) -> None:
     """
@@ -35,8 +35,8 @@ def on_press(key: keyboard.Key) -> None:
     """
     try:
         if key.char == 'n' or key.char in KEYBOARD_IDX:
-            global stop_flag
-            stop_flag[0] = key.char
+            global g_idx_keyboard
+            g_idx_keyboard[0] = key.char
     except AttributeError:
         pass
 
@@ -606,10 +606,14 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
             noisy_input = noise[
                 :, :, current_start_frame - num_input_frames:current_start_frame + current_num_frames - num_input_frames]
 
-            current_actions = get_current_action(mode=mode)
-            new_act, conditional_dict = cond_current(conditional_dict, current_start_frame, self.num_frame_per_block, replace=current_actions, mode=mode)
-            # Step 3.1: Spatial denoising loop
+            # Use the global idx_keyboard
+            mouse_cond = torch.tensor(CAMERA_VALUE_MAP[idx_mouse[0]]).cuda()
+            keyboard_cond = torch.tensor(KEYBOARD_IDX[idx_keyboard[0]]).cuda()
+            new_act, conditional_dict = cond_current(
+                conditional_dict, current_start_frame, self.num_frame_per_block, replace={"mouse": mouse_cond, "keyboard": keyboard_cond}, mode=mode
+            )
 
+            # Step 3.1: Spatial denoising loop
             for index, current_timestep in enumerate(self.denoising_step_list):
                 # set current timestep
                 timestep = torch.ones(
@@ -737,7 +741,7 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
         Returns:
             torch.Tensor: The generated video tensor.
         """
-        stop_flag = [False]
+        global g_idx_keyboard, g_idx_mouse
 
         assert noise.shape[1] == 16
         batch_size, num_channels, num_frames, height, width = noise.shape
@@ -771,7 +775,7 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
                 ]
 
                 #current_actions = get_current_action(mode=mode)
-                mouse_cond = torch.tensor(CAMERA_VALUE_MAP[idx_mouse[0]]).cuda()
+                mouse_cond = torch.tensor(CAMERA_VALUE_MAP[g_idx_mouse[0]]).cuda()
                 keyboard_cond = torch.tensor(KEYBOARD_IDX[idx_keyboard[0]]).cuda()
                 new_act, conditional_dict = cond_current(
                     conditional_dict, current_start_frame, self.num_frame_per_block, replace=current_actions, mode=mode
