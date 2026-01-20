@@ -789,9 +789,9 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
                 mouse_cond = torch.tensor(CAMERA_VALUE_MAP[g_idx_mouse[0]]).cuda()
                 keyboard_cond = torch.tensor(KEYBOARD_IDX[g_idx_keyboard[0]]).cuda()
                 current_actions=  {
-                    "mouse": mouse_cond,
-                    "keyboard": keyboard_cond
-                    }
+                "mouse": mouse_cond,
+                "keyboard": keyboard_cond
+                }
                 new_act, conditional_dict = cond_current(
                     conditional_dict, current_start_frame, self.num_frame_per_block, replace=current_actions, mode=mode
                 )
