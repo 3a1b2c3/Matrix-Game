@@ -4,33 +4,45 @@ import torch
 import time
 import copy
 
+from pynput import keyboard
 from einops import rearrange
 from utils.wan_wrapper import WanDiffusionWrapper, WanVAEWrapper
 from utils.visualize import process_video
 import torch.nn.functional as F
 from demo_utils.constant import ZERO_VAE_CACHE
-from tqdm import tqdm
 
-def get_current_action(mode="universal"):
 
-    CAM_VALUE = 0.1
-    if mode == 'universal':
-        print()
-        print('-'*30)
-        print("PRESS [I, K, J, L, U] FOR CAMERA TRANSFORM\n (I: up, K: down, J: left, L: right, U: no move)")
-        print("PRESS [W, S, A, D, Q] FOR MOVEMENT\n (W: forward, S: back, A: left, D: right, Q: no move)")
-        print('-'*30)
-        CAMERA_VALUE_MAP = {
+CAM_VALUE = 0.1
+CAMERA_VALUE_MAP = {
             "i":  [CAM_VALUE, 0],
             "k":  [-CAM_VALUE, 0],
             "j":  [0, -CAM_VALUE],
             "l":  [0, CAM_VALUE],
             "u":  [0, 0]
         }
-        KEYBOARD_IDX = { 
+KEYBOARD_IDX = { 
             "w": [1, 0, 0, 0], "s": [0, 1, 0, 0], "a": [0, 0, 1, 0], "d": [0, 0, 0, 1],
             "q": [0, 0, 0, 0]
         }
+# Global variable to track the stop flag
+stop_flag = [False]
+
+def on_press(key):
+    try:
+        if key.char == 'n':
+            global stop_flag
+            stop_flag[0] = True
+    except AttributeError:
+       pass
+
+
+def get_current_action(mode="universal"):
+    if mode == 'universal':
+        print()
+        print('-'*30)
+        print("PRESS [I, K, J, L, U] FOR CAMERA TRANSFORM\n (I: up, K: down, J: left, L: right, U: no move)")
+        print("PRESS [W, S, A, D, Q] FOR MOVEMENT\n (W: forward, S: back, A: left, D: right, Q: no move)")
+        print('-'*30)
         flag = 0
         while flag != 1:
             try:
@@ -167,6 +179,9 @@ class CausalInferencePipeline(torch.nn.Module):
 
         if self.num_frame_per_block > 1:
             self.generator.model.num_frame_per_block = self.num_frame_per_block
+
+        self.listener = keyboard.Listener(on_press=on_press)
+        self.listener.start()
 
     def inference(
         self,
@@ -415,6 +430,8 @@ class CausalInferencePipeline(torch.nn.Module):
                 (batch_size, num_output_frames, num_channels, height, width).
                 It is normalized to be in the range [0, 1].
         """
+        stop_flag = [False]
+
         assert noise.shape[1] == 16
         batch_size, num_channels, num_frames, height, width = noise.shape
         assert num_frames % self.num_frame_per_block == 0
@@ -465,9 +482,12 @@ class CausalInferencePipeline(torch.nn.Module):
 
             current_start_frame += current_num_frames
 
-            if input("Continue? (Press `n` to break)").strip() == "n":
+            # Stop if the 'n' key is pressed
+            if stop_flag[0]:
+                print("Stopping inference as 'n' key was pressed.")
                 break
 
+        self.listener.stop()
         return self._finalize_videos(videos, conditional_dict, output_folder, name, current_start_frame, mode, return_latents, output)
 
     def _initialize_vae_cache(self):
