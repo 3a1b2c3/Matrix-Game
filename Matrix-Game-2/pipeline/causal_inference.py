@@ -789,9 +789,9 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
                 mouse_cond = torch.tensor(CAMERA_VALUE_MAP[g_idx_mouse[0]]).cuda()
                 keyboard_cond = torch.tensor(KEYBOARD_IDX[g_idx_keyboard[0]]).cuda()
                 current_actions=  {
-                "mouse": mouse_cond,
-                "keyboard": keyboard_cond
-                }
+                    "mouse": mouse_cond,
+                    "keyboard": keyboard_cond
+                    }
                 new_act, conditional_dict = cond_current(
                     conditional_dict, current_start_frame, self.num_frame_per_block, replace=current_actions, mode=mode
                 )
@@ -812,7 +812,7 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
                 current_start_frame += current_num_frames
 
                 # Stop if the 'n' key is pressed
-                if stop_flag[0] == 'n':
+                if g_idx_keyboard[0] == 'n':
                     print("Stopping inference as 'n' key was pressed.")
                     self.listener.stop()
                     break
