@@ -32,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_num_output_frames", type=int, default=360,
                         help="Max number of output latent frames")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
+    parser.add_argument("--export"  , type=int, default=0, help="Export flag")
     parser.add_argument("--pretrained_model_path", type=str, default="Matrix-Game-2.0", help="Path to the VAE model folder")
     args = parser.parse_args()
     return args
@@ -98,7 +99,7 @@ class InteractiveGameInference:
             current_vae_decoder.compile(mode="max-autotune-no-cudagraphs")
         pipeline = CausalInferenceStreamingPipeline(self.config, generator=generator, vae_decoder=current_vae_decoder)
         if self.args.checkpoint_path:
-            print("Loading Pretrained Model...")
+            print("Loading Pretrained Model..." + self.args.checkpoint_path)
             state_dict = load_file(self.args.checkpoint_path)
             pipeline.generator.load_state_dict(state_dict)
 
@@ -216,7 +217,7 @@ def main() -> None:
     export = False
 
     while True:
-        videos = pipeline.generate_videos(mode, img_path=None, export=export)
+        videos = pipeline.generate_videos(mode, img_path=None, export=bool(args.export))
         print("videos", videos.shape)
         stop = input("Press `n` to stop generation or any other key to continue: ").strip().lower()
         if stop == 'n':
