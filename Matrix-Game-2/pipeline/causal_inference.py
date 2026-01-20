@@ -25,16 +25,18 @@ KEYBOARD_IDX = {
             "q": [0, 0, 0, 0]
         }
 # Global variable to track the stop flag
-stop_flag = ['q']
-idx_mouse= ['u'] 
+global g_idx_keyboard, g_idx_mouse
+g_idx_keyboard = ['q']
+g_idx_mouse = ['u'] 
 
 def on_press(key: keyboard.Key) -> None:
     """
     Handle key press events to update the global stop_flag.
     """
+    global g_idx_keyboard
     try:
         if key.char == 'n' or key.char in KEYBOARD_IDX:
-            global g_idx_keyboard
+            
             g_idx_keyboard[0] = key.char
     except AttributeError:
         pass
