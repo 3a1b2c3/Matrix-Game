@@ -25,9 +25,8 @@ KEYBOARD_IDX = {
             "q": [0, 0, 0, 0]
         }
 # Global variable to track the stop flag
-stop_flag = ['x']
-idx_mouse= [] 
-g_idx_keyboard = [] 
+stop_flag = ['q']
+idx_mouse= ['u'] 
 
 def on_press(key: keyboard.Key) -> None:
     """
