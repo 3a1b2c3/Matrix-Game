@@ -850,11 +850,11 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
             # hard code
             #current_actions = get_current_action(mode=mode)
             # Hard code default actions
-            g_idx_keyboard[0]
-            g_idx_mouse[0]
+            mouse_cond = torch.tensor(CAMERA_VALUE_MAP[g_idx_mouse[0]]).cuda()
+            keyboard_cond = torch.tensor(KEYBOARD_IDX[g_idx_keyboard[0]]).cuda()
             current_actions = {
-                "mouse": torch.tensor([0, 0]).cuda(),  # No mouse movement
-                "keyboard": torch.tensor([1, 0, 0, 0]).cuda()  # Default keyboard action (e.g., "W" for forward)
+                "mouse": torch.tensor([0, 0]).cuda() if not g_idx_mouse[0] in CAMERA_VALUE_MAP else mouse_cond,  # No mouse movement
+                "keyboard": torch.tensor([1, 0, 0, 0]).cuda()  if not g_idx_keyboard[0] in KEYBOARD_IDX else keyboard_cond # Default keyboard action (e.g., "W" for forward)
             }
 
             new_act, conditional_dict = cond_current(conditional_dict, current_start_frame, self.num_frame_per_block, replace=current_actions, mode=mode)
@@ -936,8 +936,8 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
             process_video(video.astype(np.uint8), output_folder+f'/{name}_current.mp4', config, mouse_icon, mouse_scale=0.1, process_icon=False, mode=mode)
             current_start_frame += current_num_frames
 
-            if input("Continue? (Press `n` to break)").strip() == "n":
-                break
+            #if input("Continue? (Press `n` to break)").strip() == "n":
+            #    break
                 
         videos_tensor = torch.cat(videos, dim=1)
         videos = rearrange(videos_tensor, "B T C H W -> B T H W C")
