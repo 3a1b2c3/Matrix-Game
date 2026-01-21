@@ -224,13 +224,13 @@ def main() -> None:
     os.makedirs(args.output_folder, exist_ok=True)
     pipeline = InteractiveGameInference(args)
     mode = pipeline.config.pop('mode')
-    export = False
 
     while True:
         videos = pipeline.generate_videos(mode, img_path=None, export=bool(args.export))
-        print("videos", videos.shape)
-        stop = input("Press `n` to stop generation or any other key to continue: ").strip().lower()
-        if stop == 'n':
+        if videos is not None:
+            print("videos", videos.shape)
+        stop = input("Press `q` to stop generation or any other key to continue: ").strip().lower()
+        if stop == 'q':
             break
 
 if __name__ == "__main__":
