@@ -2,7 +2,7 @@ import os
 import argparse
 import torch
 import numpy as np
-import copy
+from typing import Any, Dict
 
 from omegaconf import OmegaConf
 from torchvision.transforms import v2
@@ -17,23 +17,51 @@ from utils.conditions import *
 from utils.wan_wrapper import WanDiffusionWrapper
 from safetensors.torch import load_file
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
+    """
+    Parse command-line arguments for the inference script.
+
+    Returns:
+        argparse.Namespace: Parsed arguments.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", type=str, default="configs/inference_yaml/inference_universal.yaml", help="Path to the config file")
     parser.add_argument("--checkpoint_path", type=str, default="", help="Path to the checkpoint")
-    parser.add_argument("--output_folder", type=str, default="outputs/", help="Output folder")
+    parser.add_argument("--output_folder", type=str, default="./outputs/", help="Output folder")
+    parser.add_argument("--img_path", type=str, default="demo_images/universal/0000.png", help="Path to the image")
     parser.add_argument("--max_num_output_frames", type=int, default=360,
                         help="Max number of output latent frames")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
+    parser.add_argument("--export"  , type=int, default=0, help="Export flag")
     parser.add_argument("--pretrained_model_path", type=str, default="Matrix-Game-2.0", help="Path to the VAE model folder")
     args = parser.parse_args()
     return args
 
+
 class InteractiveGameInference:
-    def __init__(self, args):
-        self.args = args
-        self.device = torch.device("cuda")
-        self.weight_dtype = torch.bfloat16
+    """
+    A class to handle interactive game inference for generating videos.
+
+    Attributes:
+        args (argparse.Namespace): Command-line arguments.
+        device (torch.device): Device to run the inference on.
+        weight_dtype (torch.dtype): Data type for model weights.
+        config (OmegaConf): Configuration loaded from the YAML file.
+        pipeline (CausalInferenceStreamingPipeline): Inference pipeline.
+        vae (Any): VAE model for encoding and decoding.
+        frame_process (torchvision.transforms.Compose): Preprocessing pipeline for input frames.
+    """
+
+    def __init__(self, args: argparse.Namespace) -> None:
+        """
+        Initialize the InteractiveGameInference class.
+
+        Args:
+            args (argparse.Namespace): Command-line arguments.
+        """
+        self.args: argparse.Namespace = args
+        self.device: torch.device = torch.device("cuda")
+        self.weight_dtype: torch.dtype = torch.bfloat16
 
         self._init_config()
         self._init_models()
@@ -44,10 +72,16 @@ class InteractiveGameInference:
             v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
         ])
 
-    def _init_config(self):
-        self.config = OmegaConf.load(self.args.config_path)
+    def _init_config(self) -> None:
+        """
+        Load the configuration file specified in the arguments.
+        """
+        self.config: OmegaConf = OmegaConf.load(self.args.config_path)
 
-    def _init_models(self):
+    def _init_models(self) -> None:
+        """
+        Initialize the models, including the pipeline, VAE decoder, and generator.
+        """
         # Initialize pipeline
         generator = WanDiffusionWrapper(
             **getattr(self.config, "model_kwargs", {}), is_causal=True)
@@ -61,22 +95,34 @@ class InteractiveGameInference:
         current_vae_decoder.to(self.device, torch.float16)
         current_vae_decoder.requires_grad_(False)
         current_vae_decoder.eval()
-        current_vae_decoder.compile(mode="max-autotune-no-cudagraphs")
+        if os.name != 'nt':  # Disable torch.compile if running on Windows
+            current_vae_decoder.compile(mode="max-autotune-no-cudagraphs")
         pipeline = CausalInferenceStreamingPipeline(self.config, generator=generator, vae_decoder=current_vae_decoder)
         if self.args.checkpoint_path:
-            print("Loading Pretrained Model...")
+            print("Loading Pretrained Model..." + self.args.checkpoint_path)
             state_dict = load_file(self.args.checkpoint_path)
             pipeline.generator.load_state_dict(state_dict)
 
-        self.pipeline = pipeline.to(device=self.device, dtype=self.weight_dtype)
+        self.pipeline: CausalInferenceStreamingPipeline = pipeline.to(device=self.device, dtype=self.weight_dtype)
         self.pipeline.vae_decoder.to(torch.float16)
 
         vae = get_wanx_vae_wrapper(self.args.pretrained_model_path, torch.float16)
         vae.requires_grad_(False)
         vae.eval()
-        self.vae = vae.to(self.device, self.weight_dtype)
+        self.vae: Any = vae.to(self.device, self.weight_dtype)
 
-    def _resizecrop(self, image, th, tw):
+    def _resizecrop(self, image: Any, th: int, tw: int) -> Any:
+        """
+        Resize and crop an image to the target dimensions.
+
+        Args:
+            image (Any): Input image.
+            th (int): Target height.
+            tw (int): Target width.
+
+        Returns:
+            Any: Resized and cropped image.
+        """
         w, h = image.size
         if h / w > th / tw:
             new_w = int(w)
@@ -90,14 +136,24 @@ class InteractiveGameInference:
         bottom = (h + new_h) / 2
         image = image.crop((left, top, right, bottom))
         return image
-    
-    def generate_videos(self, mode='universal'):
+
+    def generate_videos(self, mode: str = 'universal', img_path=None, export=True) -> None:
+        """
+        Generate videos based on the specified mode.
+
+        Args:
+            mode (str): Mode of video generation. Options are 'universal', 'gta_drive', and 'templerun'.
+        """
         assert mode in ['universal', 'gta_drive', 'templerun']
-        
-        while True:
+        image = load_image(img_path.strip()) if img_path else None
+        while True and not img_path:
             try:
                 img_path = input("Please input the image path: ")
                 image = load_image(img_path.strip())
+                if img_path:
+                    p =(os.path.join(self.args.output_folder, os.path.basename(img_path)))
+                    print(p , os.path.exists(p))
+
                 break
             except:
                 print(f"Fail to load image from {img_path}!")
@@ -118,7 +174,7 @@ class InteractiveGameInference:
         )
         num_frames = (self.args.max_num_output_frames - 1) * 4 + 1
         
-        conditional_dict = {
+        conditional_dict: Dict[str, torch.Tensor] = {
             "cond_concat": cond_concat.to(device=self.device, dtype=self.weight_dtype),
             "visual_context": visual_context.to(device=self.device, dtype=self.weight_dtype)
         }
@@ -137,25 +193,45 @@ class InteractiveGameInference:
         conditional_dict['keyboard_cond'] = keyboard_condition
         
         with torch.no_grad():
-            videos = self.pipeline.inference(
-                noise=sampled_noise,
-                conditional_dict=conditional_dict,
-                return_latents=False,
-                output_folder=self.args.output_folder,
-                name=os.path.basename(img_path),
-                mode=mode
-            )
-        
-def main():
-    """Main entry point for video generation."""
-    args = parse_args()
+            if False:
+                videos = self.pipeline.inference(
+                    noise=sampled_noise,
+                    conditional_dict=conditional_dict,
+                    return_latents=False,
+                    output_folder=self.args.output_folder,
+                    name=os.path.basename(img_path),
+                    mode=mode,
+                    export=export
+                )
+                return videos
+            videos = self.pipeline.inference_modular(
+                    noise=sampled_noise,
+                    conditional_dict=conditional_dict,
+                    return_latents=False,
+                    output_folder=self.args.output_folder,
+                    name=os.path.basename(img_path),
+                    mode=mode,
+                    export=export
+                )
+            return videos
+def main() -> None:
+    """
+    Main entry point for video generation. Parses arguments, sets up the pipeline,
+    and starts the video generation loop.
+    """
+    args: argparse.Namespace = parse_args()
     set_seed(args.seed)
     os.makedirs(args.output_folder, exist_ok=True)
     pipeline = InteractiveGameInference(args)
     mode = pipeline.config.pop('mode')
-    stop = ''
-    while stop != 'n':
-        pipeline.generate_videos(mode)
-        stop = input("Press `n` to stop generation: ").strip().lower()
+
+    while True:
+        videos = pipeline.generate_videos(mode, img_path=None, export=bool(args.export))
+        if videos is not None:
+            print("videos", videos.shape)
+        stop = input("Press `q` to stop generation or any other key to continue: ").strip().lower()
+        if stop == 'q':
+            break
+
 if __name__ == "__main__":
     main()
