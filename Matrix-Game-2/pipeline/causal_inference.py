@@ -847,8 +847,16 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
         for current_num_frames in all_num_frames:
             noisy_input = noise[
                 :, :, current_start_frame - num_input_frames:current_start_frame + current_num_frames - num_input_frames]
+            # hard code
+            #current_actions = get_current_action(mode=mode)
+            # Hard code default actions
+            g_idx_keyboard[0]
+            g_idx_mouse[0]
+            current_actions = {
+                "mouse": torch.tensor([0, 0]).cuda(),  # No mouse movement
+                "keyboard": torch.tensor([1, 0, 0, 0]).cuda()  # Default keyboard action (e.g., "W" for forward)
+            }
 
-            current_actions = get_current_action(mode=mode)
             new_act, conditional_dict = cond_current(conditional_dict, current_start_frame, self.num_frame_per_block, replace=current_actions, mode=mode)
             # Step 3.1: Spatial denoising loop
 
@@ -950,9 +958,9 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
 
         if return_latents:
             return output
-        else:
-            return video
-        return
+        return video
+        
+        ####
         assert noise.shape[1] == 16
         batch_size, num_channels, num_frames, height, width = noise.shape
         assert num_frames % self.num_frame_per_block == 0
