@@ -850,6 +850,9 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
             # hard code
             #current_actions = get_current_action(mode=mode)
             # Hard code default actions
+            print(g_idx_keyboard[0],  current_num_frames, " current_num_frames ", g_idx_mouse[0])
+            if g_idx_keyboard[0] =="q":
+                break
             mouse_cond = torch.tensor(CAMERA_VALUE_MAP[g_idx_mouse[0]]).cuda()
             keyboard_cond = torch.tensor(KEYBOARD_IDX[g_idx_keyboard[0]]).cuda()
             current_actions = {
@@ -938,7 +941,9 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
 
             #if input("Continue? (Press `n` to break)").strip() == "n":
             #    break
-                
+        if not videos:
+            print("No videos were generated.")
+            return None
         videos_tensor = torch.cat(videos, dim=1)
         videos = rearrange(videos_tensor, "B T C H W -> B T H W C")
         videos = ((videos.float() + 1) * 127.5).clip(0, 255).cpu().numpy().astype(np.uint8)[0]
