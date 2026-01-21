@@ -162,9 +162,9 @@ def overlay_icon(frame, icon, position, scale=1.0, rotation=0):
 
 
 # 处理视频
-def process_video(input_video, output_video, config, mouse_icon_path, mouse_scale=1.0, mouse_rotation=0, process_icon=True, mode='universal'):
+def process_video(input_video, output_video, config, mouse_icon_path, mouse_scale=1.0, mouse_rotation=0, process_icon=True, mode='universal', fps = 12):
     key_data, mouse_data = parse_config(config, mode=mode)
-    fps = 12
+
     frame_width = input_video[0].shape[1]
     frame_height = input_video[0].shape[0]
     frame_count = len(input_video)

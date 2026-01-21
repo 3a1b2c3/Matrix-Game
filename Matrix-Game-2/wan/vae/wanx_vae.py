@@ -40,6 +40,8 @@ class WanxVAEWrapper(VAEWrapper):
 
 def get_wanx_vae_wrapper(model_path, weight_dtype):
     vae = WanVAE(pretrained_path = os.path.join(model_path, "Wan2.1_VAE.pth")).to(weight_dtype)
+    print(os.path.join(model_path, "models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth"))
+    assert os.path.exists(os.path.join(model_path, "models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth"))
     clip = CLIPModel(checkpoint_path = os.path.join(model_path, "models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth"),
     tokenizer_path = os.path.join(model_path, 'xlm-roberta-large'))
     return WanxVAEWrapper(vae, clip)
