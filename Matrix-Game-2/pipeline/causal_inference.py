@@ -926,7 +926,7 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
             video = rearrange(video, "B T C H W -> B T H W C")
             video = ((video.float() + 1) * 127.5).clip(0, 255).cpu().numpy().astype(np.uint8)[0]
             video = np.ascontiguousarray(video)
-            if export:
+            if export or True:
                 mouse_icon = 'assets/images/mouse.png'
                 if mode != 'templerun':
                     config = (
@@ -960,7 +960,7 @@ class CausalInferenceStreamingPipeline(torch.nn.Module):
                 config = (
                     conditional_dict["keyboard_cond"][0, : 1 + 4 * (current_start_frame + self.num_frame_per_block-1)].float().cpu().numpy()
                 )
-
+            # export final video with icons
             process_video(video.astype(np.uint8), output_folder+f'/{name}_icon.mp4', config, mouse_icon, mouse_scale=0.1, mode=mode)
             process_video(video.astype(np.uint8), output_folder+f'/{name}.mp4', config, mouse_icon, mouse_scale=0.1, process_icon=False, mode=mode)
 
