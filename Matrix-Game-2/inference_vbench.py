@@ -180,7 +180,8 @@ class InteractiveGameInference:
         print("Done")
 
     def run_vbench(self):
-        import json, time
+        import glob as _glob
+        import json, random, time
         from diffusers.utils import export_to_video
 
         mode = 'universal'
@@ -221,7 +222,7 @@ class InteractiveGameInference:
             if not os.path.exists(_img):
                 continue
             for si in range(self.args.num_samples):
-                if os.path.exists(os.path.join(self.args.vbench_output_dir, f"{_caption}-{si}.mp4")):
+                if _glob.glob(os.path.join(self.args.vbench_output_dir, f"{_caption}-{si}-*.mp4")):
                     n_prescan_done += 1
                 else:
                     total_todo += 1
@@ -238,14 +239,14 @@ class InteractiveGameInference:
                 continue
 
             for sample_idx in range(self.args.num_samples):
-                vbench_path = os.path.join(self.args.vbench_output_dir, f"{caption}-{sample_idx}.mp4")
-                if os.path.exists(vbench_path):
+                if _glob.glob(os.path.join(self.args.vbench_output_dir, f"{caption}-{sample_idx}-*.mp4")):
                     print(f"[MG2-VBench] Exists {entry_idx} s{sample_idx}: {caption[:60]}")
                     n_skipped += 1
                     continue
 
-                sample_seed = self.args.seed + sample_idx
+                sample_seed = random.randint(0, 2**32 - 1)
                 set_seed(sample_seed)
+                vbench_path = os.path.join(self.args.vbench_output_dir, f"{caption}-{sample_idx}-{sample_seed}.mp4")
                 print(f"[MG2-VBench] {entry_idx}/{len(entries)} s{sample_idx} seed={sample_seed}: {caption[:60]}")
                 t0 = time.time()
 
@@ -294,7 +295,7 @@ class InteractiveGameInference:
                 gen_fps = num_frames / elapsed
                 total_gen_t += elapsed
                 total_videos += 1
-                line = f"{caption}-{sample_idx} | {num_frames}f | {elapsed:.1f}s | gen_fps={gen_fps:.3f}"
+                line = f"{caption}-{sample_idx}-{sample_seed} | {num_frames}f | {elapsed:.1f}s | gen_fps={gen_fps:.3f}"
                 fps_lines.append(line)
                 avg_t = total_gen_t / total_videos
                 remaining = total_todo - total_videos
