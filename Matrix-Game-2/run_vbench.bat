@@ -24,7 +24,7 @@ echo   3  image_types    Comma-separated type filter      (default: scenery,indo
 echo.
 echo Notes:
 echo   - VBench requires 5 samples per prompt
-echo   - num_output_frames=21 -> 81 video frames
+echo   - num_output_frames=42 -> 165 video frames
 echo   - Already-generated videos are skipped automatically
 echo   - Outputs: {output_base}\videos\{caption}-{0..N-1}.mp4
 echo   - FPS log: {output_base}\videos\fps_log.txt
@@ -36,7 +36,7 @@ exit /b 0
 set CKPT=Matrix-Game-2.0\base_distilled_model\base_distill.safetensors
 set CONFIG=configs/inference_yaml/inference_universal.yaml
 set PRETRAINED=Matrix-Game-2.0
-set NUM_OUTPUT_FRAMES=21
+set NUM_OUTPUT_FRAMES=42
 set SEED=42
 :: ──────────────────────────────────────────────────────────────────────────
 
@@ -68,7 +68,7 @@ echo ============================================================
 echo   output    : %VBENCH_OUTPUT_DIR%
 echo   samples   : %NUM_SAMPLES%
 echo   types     : %IMAGE_TYPES%
-echo   lat frames: %NUM_OUTPUT_FRAMES%  ^(=81 video frames^)
+echo   lat frames: %NUM_OUTPUT_FRAMES%  ^(=%NUM_OUTPUT_FRAMES% lat = %NUM_OUTPUT_FRAMES%*4-3 video frames^)
 echo   seed      : %SEED%
 echo ============================================================
 
@@ -87,9 +87,8 @@ if not "%CKPT%"=="" set PY_ARGS=%PY_ARGS% --checkpoint_path "%ROOT%\%CKPT%"
 
 echo.
 echo [MG2-VBench] Generating %NUM_SAMPLES% samples per prompt...
-python "%ROOT%\inference_vbench.py" %PY_ARGS% > "%ROOT%\%LOG_FILE%" 2>&1
+python "%ROOT%\inference_vbench.py" %PY_ARGS% 2>&1 | powershell -Command "$input | Tee-Object -FilePath '%ROOT%\%LOG_FILE%'"
 set EXIT_CODE=%ERRORLEVEL%
-type "%ROOT%\%LOG_FILE%"
 echo [MG2-VBench] Done. Exit: %EXIT_CODE%
 
 :: Record end time

@@ -183,7 +183,7 @@ class InteractiveGameInference:
         import json, time
         from diffusers.utils import export_to_video
 
-        mode = self.config.get('mode', 'universal')
+        mode = 'universal'
         num_frames = (self.args.num_output_frames - 1) * 4 + 1
 
         with open(self.args.vbench_info_json) as f:
@@ -269,17 +269,10 @@ class InteractiveGameInference:
                     "cond_concat": cond_concat.to(device=self.device, dtype=self.weight_dtype),
                     "visual_context": visual_context.to(device=self.device, dtype=self.weight_dtype),
                 }
-                if mode == 'universal':
-                    cond_data = Bench_actions_universal(num_frames)
-                    mouse_condition = cond_data['mouse_condition'].unsqueeze(0).to(device=self.device, dtype=self.weight_dtype)
-                    conditional_dict['mouse_cond'] = mouse_condition
-                elif mode == 'gta_drive':
-                    cond_data = Bench_actions_gta_drive(num_frames)
-                    mouse_condition = cond_data['mouse_condition'].unsqueeze(0).to(device=self.device, dtype=self.weight_dtype)
-                    conditional_dict['mouse_cond'] = mouse_condition
-                else:
-                    cond_data = Bench_actions_templerun(num_frames)
+                cond_data = Bench_actions_universal(num_frames)
+                mouse_condition = cond_data['mouse_condition'].unsqueeze(0).to(device=self.device, dtype=self.weight_dtype)
                 keyboard_condition = cond_data['keyboard_condition'].unsqueeze(0).to(device=self.device, dtype=self.weight_dtype)
+                conditional_dict['mouse_cond'] = mouse_condition
                 conditional_dict['keyboard_cond'] = keyboard_condition
 
                 with torch.no_grad():
