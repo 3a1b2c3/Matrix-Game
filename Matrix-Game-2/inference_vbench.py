@@ -320,10 +320,38 @@ class InteractiveGameInference:
                 f"avg_time={avg_t:.1f}s  avg_gen_fps={num_frames / avg_t:.3f}"
             )
         else:
+            avg_t = 0.0
             fps_lines.append(f"Total: 0 generated  {n_skipped} skipped")
         with open(fps_log, 'w') as f:
             f.write('\n'.join(fps_lines) + '\n')
         print(f"[MG2-VBench] Done. FPS log: {fps_log}")
+
+        # Write stats summary txt
+        import datetime as _dt
+        stats_file = os.path.join(os.path.dirname(self.args.vbench_output_dir), "vbench_stats.txt")
+        total_s = int(total_gen_t)
+        with open(stats_file, 'w') as _sf:
+            _sf.write("Matrix-Game-2 VBench Stats\n")
+            _sf.write("==========================\n")
+            _sf.write(f"Date:           {_dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            _sf.write(f"\n=== Settings ===\n")
+            _sf.write(f"Image types:    {self.args.image_types}\n")
+            _sf.write(f"Num samples:    {self.args.num_samples}\n")
+            _sf.write(f"Lat frames:     {self.args.num_output_frames}\n")
+            _sf.write(f"Video frames:   {num_frames}\n")
+            _sf.write(f"Num steps:      {getattr(self.args, 'num_steps', None) or 'config default'}\n")
+            _sf.write(f"Seed:           {self.args.seed}\n")
+            _sf.write(f"\n=== Performance ===\n")
+            _sf.write(f"Generated:      {total_videos}\n")
+            _sf.write(f"Skipped:        {n_skipped}\n")
+            _sf.write(f"Total time:     {total_s // 3600}h {(total_s % 3600) // 60}m {total_s % 60}s ({total_s}s)\n")
+            if total_videos > 0:
+                _sf.write(f"Avg per video:  {avg_t:.1f}s\n")
+                _sf.write(f"Avg gen fps:    {num_frames / avg_t:.3f}\n")
+            _sf.write(f"\n=== Output ===\n")
+            _sf.write(f"Videos dir:     {self.args.vbench_output_dir}\n")
+            _sf.write(f"FPS log:        {fps_log}\n")
+        print(f"[MG2-VBench] Stats: {stats_file}")
 
 
 def main():
@@ -337,6 +365,25 @@ def main():
     if args.vbench_output_dir and not os.path.isabs(args.vbench_output_dir):
         args.vbench_output_dir = os.path.join(_script_dir, args.vbench_output_dir)
     set_seed(args.seed)
+
+    if args.vbench_output_dir:
+        import glob as _glob, json as _json
+        with open(args.vbench_info_json) as _f:
+            _entries = _json.load(_f)
+        if args.image_types:
+            _allowed = {t.strip() for t in args.image_types.split(',') if t.strip()}
+            _entries = [e for e in _entries if e.get('type', '') in _allowed]
+        _out_dir = args.vbench_output_dir
+        _n_done = sum(
+            1 for e in _entries
+            for si in range(args.num_samples)
+            if _glob.glob(os.path.join(_out_dir, f"{e.get('caption', e['file_name'])}-{si}-*.mp4"))
+        )
+        _n_todo = len(_entries) * args.num_samples - _n_done
+        print(f"[MG2-VBench] {len(_entries)} prompts ({args.image_types}) | "
+              f"{_n_done} already done | {_n_todo} to generate")
+        print(f"[MG2-VBench] Loading models...")
+
     pipeline = InteractiveGameInference(args)
     if args.vbench_output_dir:
         pipeline.run_vbench()
