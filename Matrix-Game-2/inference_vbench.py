@@ -47,6 +47,8 @@ def parse_args():
                         help="Videos to generate per prompt for VBench (default: 5)")
     parser.add_argument("--fps_log", type=str, default=None,
                         help="Path for FPS/timing log (default: {vbench_output_dir}/fps_log.txt)")
+    parser.add_argument("--num_steps", type=int, default=None,
+                        help="Number of denoising steps; overrides denoising_step_list in config")
     args = parser.parse_args()
     return args
 
@@ -67,6 +69,11 @@ class InteractiveGameInference:
 
     def _init_config(self):
         self.config = OmegaConf.load(self.args.config_path)
+        if getattr(self.args, 'num_steps', None):
+            n = self.args.num_steps
+            step_list = [round(1000 * (n - i) / n) for i in range(n)]
+            self.config.denoising_step_list = step_list
+            print(f"[MG2] denoising_step_list overridden to {step_list} ({n} steps)")
 
     def _init_models(self):
         # Initialize pipeline

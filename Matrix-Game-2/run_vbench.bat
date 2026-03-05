@@ -37,7 +37,8 @@ set CKPT=Matrix-Game-2.0\base_distilled_model\base_distill.safetensors
 set CONFIG=configs/inference_yaml/inference_universal.yaml
 set PRETRAINED=Matrix-Game-2.0
 set NUM_OUTPUT_FRAMES=42
-set SEED=42
+set NUM_STEPS=5
+set /a SEED=%RANDOM% * 32768 + %RANDOM%
 :: ──────────────────────────────────────────────────────────────────────────
 
 set OUTPUT_BASE=%~1
@@ -89,6 +90,7 @@ set PY_ARGS=%PY_ARGS% --seed %SEED%
 set PY_ARGS=%PY_ARGS% --vbench_output_dir "%VBENCH_OUTPUT_DIR%"
 set PY_ARGS=%PY_ARGS% --image_types "%IMAGE_TYPES%"
 set PY_ARGS=%PY_ARGS% --num_samples %NUM_SAMPLES%
+if not "%NUM_STEPS%"=="" set PY_ARGS=%PY_ARGS% --num_steps %NUM_STEPS%
 if not "%CKPT%"=="" set PY_ARGS=%PY_ARGS% --checkpoint_path "%ROOT%\%CKPT%"
 
 echo.
