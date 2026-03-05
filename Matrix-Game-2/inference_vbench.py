@@ -322,6 +322,13 @@ class InteractiveGameInference:
 def main():
     """Main entry point for video generation."""
     args = parse_args()
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    if not os.path.isabs(args.pretrained_model_path):
+        args.pretrained_model_path = os.path.join(_script_dir, args.pretrained_model_path)
+    if not os.path.isabs(args.config_path):
+        args.config_path = os.path.join(_script_dir, args.config_path)
+    if args.vbench_output_dir and not os.path.isabs(args.vbench_output_dir):
+        args.vbench_output_dir = os.path.join(_script_dir, args.vbench_output_dir)
     set_seed(args.seed)
     pipeline = InteractiveGameInference(args)
     if args.vbench_output_dir:

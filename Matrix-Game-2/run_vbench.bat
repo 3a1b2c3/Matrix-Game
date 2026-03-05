@@ -47,10 +47,16 @@ if "%NUM_SAMPLES%"=="" set NUM_SAMPLES=5
 set IMAGE_TYPES=%~3
 if "%IMAGE_TYPES%"=="" set IMAGE_TYPES=scenery,indoor
 
-set VBENCH_OUTPUT_DIR=%OUTPUT_BASE%\videos
-
 set ROOT=%~dp0
 if "%ROOT:~-1%"=="\" set ROOT=%ROOT:~0,-1%
+
+:: Prepend ROOT only for relative OUTPUT_BASE (skip if already absolute)
+if "%OUTPUT_BASE:~1,1%"==":" (
+    rem absolute path — keep as-is
+) else (
+    set OUTPUT_BASE=%ROOT%\%OUTPUT_BASE%
+)
+set VBENCH_OUTPUT_DIR=%OUTPUT_BASE%\videos
 
 if not exist "%OUTPUT_BASE%" mkdir "%OUTPUT_BASE%"
 
@@ -76,18 +82,18 @@ echo ============================================================
 set START_TIME=%TIME%
 for /f "tokens=1-4 delims=:., " %%a in ("%TIME: =0%") do set /a START_S=(1%%a-100)*3600+(1%%b-100)*60+(1%%c-100)
 
-set PY_ARGS=--config_path "%ROOT%\%CONFIG%"
-set PY_ARGS=%PY_ARGS% --pretrained_model_path "%ROOT%\%PRETRAINED%"
+set PY_ARGS=--config_path "%CONFIG%"
+set PY_ARGS=%PY_ARGS% --pretrained_model_path "%PRETRAINED%"
 set PY_ARGS=%PY_ARGS% --num_output_frames %NUM_OUTPUT_FRAMES%
 set PY_ARGS=%PY_ARGS% --seed %SEED%
-set PY_ARGS=%PY_ARGS% --vbench_output_dir "%ROOT%\%VBENCH_OUTPUT_DIR%"
+set PY_ARGS=%PY_ARGS% --vbench_output_dir "%VBENCH_OUTPUT_DIR%"
 set PY_ARGS=%PY_ARGS% --image_types "%IMAGE_TYPES%"
 set PY_ARGS=%PY_ARGS% --num_samples %NUM_SAMPLES%
 if not "%CKPT%"=="" set PY_ARGS=%PY_ARGS% --checkpoint_path "%ROOT%\%CKPT%"
 
 echo.
 echo [MG2-VBench] Generating %NUM_SAMPLES% samples per prompt...
-python "%ROOT%\inference_vbench.py" %PY_ARGS% 2>&1 | powershell -Command "$input | Tee-Object -FilePath '%ROOT%\%LOG_FILE%'"
+python "%ROOT%\inference_vbench.py" %PY_ARGS% 2>&1 | powershell -Command "$input | Tee-Object -FilePath '%LOG_FILE%'"
 set EXIT_CODE=%ERRORLEVEL%
 echo [MG2-VBench] Done. Exit: %EXIT_CODE%
 

@@ -1,4 +1,5 @@
 import types
+import os
 from typing import List, Optional
 import torch
 from torch import nn
@@ -72,6 +73,8 @@ class WanDiffusionWrapper(torch.nn.Module):
             is_causal=True,
     ):
         super().__init__()
+        if model_config and not os.path.isabs(model_config):
+            model_config = os.path.join(os.path.dirname(os.path.dirname(__file__)), model_config)
         print(model_config)
         self.model = CausalWanModel.from_config(model_config)
         self.model.eval()

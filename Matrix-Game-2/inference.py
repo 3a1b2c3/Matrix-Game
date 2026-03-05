@@ -22,16 +22,22 @@ from utils.conditions import *
 from utils.wan_wrapper import WanDiffusionWrapper
 from safetensors.torch import load_file
 
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def _p(*parts):
+    """Resolve path relative to script directory."""
+    return os.path.normpath(os.path.join(_SCRIPT_DIR, *parts))
+
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config_path", type=str, default="configs/inference_yaml/inference_universal.yaml", help="Path to the config file")
+    parser.add_argument("--config_path", type=str, default=_p("configs/inference_yaml/inference_universal.yaml"), help="Path to the config file")
     parser.add_argument("--checkpoint_path", type=str, default="", help="Path to the checkpoint")
-    parser.add_argument("--img_path", type=str, default="demo_images/universal/0000.png", help="Path to the image")
-    parser.add_argument("--output_folder", type=str, default="outputs/", help="Output folder")
+    parser.add_argument("--img_path", type=str, default=_p("demo_images/universal/0000.png"), help="Path to the image")
+    parser.add_argument("--output_folder", type=str, default=_p("outputs"), help="Output folder")
     parser.add_argument("--num_output_frames", type=int, default=150,
                         help="Number of output latent frames")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
-    parser.add_argument("--pretrained_model_path", type=str, default="Matrix-Game-2.0", help="Path to the VAE model folder")
+    parser.add_argument("--pretrained_model_path", type=str, default=_p("Matrix-Game-2.0"), help="Path to the VAE model folder")
     args = parser.parse_args()
     return args
 
@@ -55,8 +61,12 @@ class InteractiveGameInference:
 
     def _init_models(self):
         # Initialize pipeline
-        generator = WanDiffusionWrapper(
-            **getattr(self.config, "model_kwargs", {}), is_causal=True)
+        from wan.modules.causal_model import CausalWanModel
+        model_kwargs = dict(getattr(self.config, "model_kwargs", {}))
+        if isinstance(model_kwargs.get("model_config"), str):
+            _cfg_path = os.path.normpath(os.path.join(_SCRIPT_DIR, model_kwargs["model_config"]))
+            model_kwargs["model_config"] = CausalWanModel.load_config(_cfg_path)
+        generator = WanDiffusionWrapper(**model_kwargs, is_causal=True)
         current_vae_decoder = VAEDecoderWrapper()
         vae_state_dict = torch.load(os.path.join(self.args.pretrained_model_path, "Wan2.1_VAE.pth"), map_location="cpu")
         decoder_state_dict = {}
@@ -150,7 +160,7 @@ class InteractiveGameInference:
         videos = rearrange(videos_tensor, "B T C H W -> B T H W C")
         videos = ((videos.float() + 1) * 127.5).clip(0, 255).cpu().numpy().astype(np.uint8)[0]
         video = np.ascontiguousarray(videos)
-        mouse_icon = 'assets/images/mouse.png'
+        mouse_icon = _p('assets/images/mouse.png')
         if mode != 'templerun':
             config = (
                 keyboard_condition[0].float().cpu().numpy(),
@@ -164,9 +174,38 @@ class InteractiveGameInference:
         process_video(video.astype(np.uint8), self.args.output_folder+f'/demo_icon.mp4', config, mouse_icon, mouse_scale=0.1, process_icon=True, mode=mode)
         print("Done")
 
+def validate_inputs(args):
+    errors = []
+    if not os.path.isfile(args.img_path):
+        errors.append(f"Image not found: {args.img_path}")
+    if not os.path.isfile(args.config_path):
+        errors.append(f"Config not found: {args.config_path}")
+    else:
+        # Check model_config dir referenced inside the yaml
+        from omegaconf import OmegaConf
+        cfg = OmegaConf.load(args.config_path)
+        model_config = OmegaConf.to_container(cfg, resolve=True).get("model_kwargs", {}).get("model_config")
+        if isinstance(model_config, str):
+            mc_path = os.path.normpath(os.path.join(_SCRIPT_DIR, model_config))
+            if not os.path.isfile(os.path.join(mc_path, "config.json")):
+                errors.append(f"Model config not found: {mc_path}")
+    vae_path = os.path.join(args.pretrained_model_path, "Wan2.1_VAE.pth")
+    if not os.path.isfile(vae_path):
+        errors.append(f"VAE weights not found: {vae_path}")
+    clip_path = os.path.join(args.pretrained_model_path, "models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth")
+    if not os.path.isfile(clip_path):
+        errors.append(f"CLIP weights not found: {clip_path}")
+    if args.checkpoint_path and not os.path.isfile(args.checkpoint_path):
+        errors.append(f"Checkpoint not found: {args.checkpoint_path}")
+    if errors:
+        for e in errors:
+            print(f"ERROR: {e}")
+        raise SystemExit(1)
+
 def main():
     """Main entry point for video generation."""
     args = parse_args()
+    validate_inputs(args)
     set_seed(args.seed)
     os.makedirs(args.output_folder, exist_ok=True)
     pipeline = InteractiveGameInference(args)
