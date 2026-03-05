@@ -245,10 +245,11 @@ class InteractiveGameInference:
                 print(f"[MG2-VBench] Skip {entry_idx}: not found: {image_path}")
                 continue
 
+            prompt_skipped = 0
             for sample_idx in range(self.args.num_samples):
                 if _glob.glob(os.path.join(self.args.vbench_output_dir, f"{caption}-{sample_idx}-*.mp4")):
-                    print(f"[MG2-VBench] Exists {entry_idx} s{sample_idx}: {caption[:60]}")
                     n_skipped += 1
+                    prompt_skipped += 1
                     continue
 
                 sample_seed = random.randint(0, 2**32 - 1)
@@ -310,7 +311,11 @@ class InteractiveGameInference:
                 eta_str = f"{eta_s // 3600}h {(eta_s % 3600) // 60}m {eta_s % 60}s"
                 pct = 100.0 * total_videos / max(total_todo, 1)
                 print(f"[MG2-VBench] [{total_videos}/{total_todo}] {pct:.1f}% | "
-                      f"{elapsed:.1f}s/vid | ETA: {eta_str} | {os.path.basename(vbench_path)}")
+                      f"prompt {entry_idx+1}/{len(entries)} s{sample_idx+1}/{self.args.num_samples} | "
+                      f"{elapsed:.1f}s | ETA: {eta_str} | skipped so far: {n_skipped}")
+            if prompt_skipped > 0:
+                print(f"[MG2-VBench] Skipped prompt {entry_idx+1}/{len(entries)}: "
+                      f"{prompt_skipped}/{self.args.num_samples} samples exist — {caption[:60]}")
 
         fps_lines.append("")
         if total_videos > 0:
@@ -380,8 +385,9 @@ def main():
             if _glob.glob(os.path.join(_out_dir, f"{e.get('caption', e['file_name'])}-{si}-*.mp4"))
         )
         _n_todo = len(_entries) * args.num_samples - _n_done
-        print(f"[MG2-VBench] {len(_entries)} prompts ({args.image_types}) | "
-              f"{_n_done} already done | {_n_todo} to generate")
+        print(f"[MG2-VBench] Output dir  : {args.vbench_output_dir}")
+        print(f"[MG2-VBench] Prompts     : {len(_entries)} ({args.image_types})")
+        print(f"[MG2-VBench] To generate : {_n_todo}  |  already done: {_n_done}")
         print(f"[MG2-VBench] Loading models...")
 
     pipeline = InteractiveGameInference(args)
