@@ -1,9 +1,11 @@
+import csv
 import os
 import argparse
 import sys
 #os.environ["TORCH_USE_FLASH_ATTENTION"] = "0"
 import torch
 import numpy as np
+import psutil
 
 # Disable flash attention
 torch.backends.cuda.enable_flash_sdp(False)
@@ -41,8 +43,8 @@ def parse_args():
     parser.add_argument("--vbench_info_json", type=str,
                         default=r"C:\workspace\world\VBench\vbench2_beta_i2v\vbench2_beta_i2v\data\i2v-bench-info.json",
                         help="Path to i2v-bench-info.json")
-    parser.add_argument("--image_types", type=str, default="scenery,indoor",
-                        help="Comma-separated image types to include (default: scenery,indoor)")
+    parser.add_argument("--image_types", type=str, default="",
+                        help="Comma-separated image types to include (default: all)")
     parser.add_argument("--num_samples", type=int, default=5,
                         help="Videos to generate per prompt for VBench (default: 5)")
     parser.add_argument("--fps_log", type=str, default=None,
@@ -51,6 +53,17 @@ def parse_args():
                         help="Number of denoising steps; overrides denoising_step_list in config")
     args = parser.parse_args()
     return args
+
+def _sys_stats():
+    vm = psutil.virtual_memory()
+    ram_used = vm.used / 1024**3
+    if torch.cuda.is_available():
+        gpu_used  = torch.cuda.memory_allocated() / 1024**3
+        gpu_total = torch.cuda.get_device_properties(0).total_memory / 1024**3
+    else:
+        gpu_used = gpu_total = 0.0
+    return ram_used, gpu_used, gpu_total
+
 
 class InteractiveGameInference:
     def __init__(self, args):
@@ -209,6 +222,13 @@ class InteractiveGameInference:
 
         os.makedirs(self.args.vbench_output_dir, exist_ok=True)
         fps_log = self.args.fps_log or os.path.join(self.args.vbench_output_dir, "fps_log.txt")
+        stats_csv = os.path.join(os.path.dirname(self.args.vbench_output_dir), "vbench_stats.csv")
+        _csv_is_new = not os.path.exists(stats_csv)
+        _csv_f = open(stats_csv, "a", newline="", encoding="utf-8")
+        _csv_w = csv.writer(_csv_f)
+        if _csv_is_new:
+            _csv_w.writerow(["timestamp", "entry_idx", "caption", "sample_idx", "seed",
+                             "duration_s", "gen_fps", "ram_gb", "vram_gb", "out_path", "status"])
 
         fps_lines = [
             "Matrix-Game-2 VBench FPS Log",
@@ -250,6 +270,9 @@ class InteractiveGameInference:
                 if _glob.glob(os.path.join(self.args.vbench_output_dir, f"{caption}-{sample_idx}-*.mp4")):
                     n_skipped += 1
                     prompt_skipped += 1
+                    _csv_w.writerow([time.strftime("%Y-%m-%dT%H:%M:%S"), entry_idx, caption, sample_idx, "",
+                                     "", "", "", "", "", "skipped"])
+                    _csv_f.flush()
                     continue
 
                 sample_seed = random.randint(0, 2**32 - 1)
@@ -303,8 +326,13 @@ class InteractiveGameInference:
                 gen_fps = num_frames / elapsed
                 total_gen_t += elapsed
                 total_videos += 1
-                line = f"{caption}-{sample_idx}-{sample_seed} | {num_frames}f | {elapsed:.1f}s | gen_fps={gen_fps:.3f}"
+                ram_used, vram_used, _ = _sys_stats()
+                line = f"{caption}-{sample_idx}-{sample_seed} | {num_frames}f | {elapsed:.1f}s | gen_fps={gen_fps:.3f} | ram={ram_used:.1f}GB vram={vram_used:.1f}GB"
                 fps_lines.append(line)
+                _csv_w.writerow([time.strftime("%Y-%m-%dT%H:%M:%S"), entry_idx, caption, sample_idx, sample_seed,
+                                 f"{elapsed:.2f}", f"{gen_fps:.3f}", f"{ram_used:.2f}", f"{vram_used:.2f}",
+                                 vbench_path, "ok"])
+                _csv_f.flush()
                 avg_t = total_gen_t / total_videos
                 remaining = total_todo - total_videos
                 eta_s = int(avg_t * remaining)
@@ -329,7 +357,9 @@ class InteractiveGameInference:
             fps_lines.append(f"Total: 0 generated  {n_skipped} skipped")
         with open(fps_log, 'w') as f:
             f.write('\n'.join(fps_lines) + '\n')
+        _csv_f.close()
         print(f"[MG2-VBench] Done. FPS log: {fps_log}")
+        print(f"[MG2-VBench] Stats CSV: {stats_csv}")
 
         # Write stats summary txt
         import datetime as _dt
@@ -356,6 +386,7 @@ class InteractiveGameInference:
             _sf.write(f"\n=== Output ===\n")
             _sf.write(f"Videos dir:     {self.args.vbench_output_dir}\n")
             _sf.write(f"FPS log:        {fps_log}\n")
+            _sf.write(f"Stats CSV:      {stats_csv}\n")
         print(f"[MG2-VBench] Stats: {stats_file}")
 
 

@@ -95,7 +95,7 @@ if not "%CKPT%"=="" set PY_ARGS=%PY_ARGS% --checkpoint_path "%ROOT%\%CKPT%"
 
 echo.
 echo [MG2-VBench] Generating %NUM_SAMPLES% samples per prompt...
-python "%ROOT%\inference_vbench.py" %PY_ARGS% 2>&1 | powershell -Command "$input | Tee-Object -FilePath '%LOG_FILE%'"
+python "%ROOT%\inference_vbench.py" %PY_ARGS% 2>&1 | powershell -Command "$input | Tee-Object -FilePath '%LOG_FILE%'; exit $LASTEXITCODE"
 set EXIT_CODE=%ERRORLEVEL%
 echo [MG2-VBench] Done. Exit: %EXIT_CODE%
 
