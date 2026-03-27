@@ -37,8 +37,12 @@ set CKPT=Matrix-Game-2.0\base_distilled_model\base_distill.safetensors
 set CONFIG=configs/inference_yaml/inference_universal.yaml
 set PRETRAINED=Matrix-Game-2.0
 set NUM_OUTPUT_FRAMES=42
-set NUM_STEPS=5
+set NUM_STEPS=4
 set /a SEED=%RANDOM% * 32768 + %RANDOM%
+set WORLDCACHE=1
+set WORLDCACHE_THRESH=0.40
+set WORLDCACHE_WARMUP=1
+set BLOCK_CTX_THRESH=0.0
 :: ──────────────────────────────────────────────────────────────────────────
 
 set OUTPUT_BASE=%~1
@@ -77,6 +81,11 @@ echo   samples   : %NUM_SAMPLES%
 echo   types     : %IMAGE_TYPES%
 echo   lat frames: %NUM_OUTPUT_FRAMES%  ^(=%NUM_OUTPUT_FRAMES% lat = %NUM_OUTPUT_FRAMES%*4-3 video frames^)
 echo   seed      : %SEED%
+if not "%WORLDCACHE%"=="" (
+    echo   worldcache: ON  thresh=%WORLDCACHE_THRESH%  warmup=%WORLDCACHE_WARMUP%
+) else (
+    echo   worldcache: OFF
+)
 echo ============================================================
 
 :: Record start time
@@ -92,6 +101,8 @@ set PY_ARGS=%PY_ARGS% --image_types "%IMAGE_TYPES%"
 set PY_ARGS=%PY_ARGS% --num_samples %NUM_SAMPLES%
 if not "%NUM_STEPS%"=="" set PY_ARGS=%PY_ARGS% --num_steps %NUM_STEPS%
 if not "%CKPT%"=="" set PY_ARGS=%PY_ARGS% --checkpoint_path "%ROOT%\%CKPT%"
+if not "%WORLDCACHE%"=="" set PY_ARGS=%PY_ARGS% --worldcache --worldcache_thresh %WORLDCACHE_THRESH% --worldcache_warmup %WORLDCACHE_WARMUP%
+if not "%BLOCK_CTX_THRESH%"=="0.0" if not "%BLOCK_CTX_THRESH%"=="" set PY_ARGS=%PY_ARGS% --block_ctx_thresh %BLOCK_CTX_THRESH%
 
 echo.
 echo [MG2-VBench] Generating %NUM_SAMPLES% samples per prompt...

@@ -2,6 +2,7 @@ import csv
 import os
 import argparse
 import sys
+import types
 #os.environ["TORCH_USE_FLASH_ATTENTION"] = "0"
 import torch
 import numpy as np
@@ -51,6 +52,15 @@ def parse_args():
                         help="Path for FPS/timing log (default: {vbench_output_dir}/fps_log.txt)")
     parser.add_argument("--num_steps", type=int, default=None,
                         help="Number of denoising steps; overrides denoising_step_list in config")
+    # WorldCache
+    parser.add_argument("--worldcache", action="store_true", default=False,
+                        help="Enable WorldCache: skip denoising steps whose input change is below threshold")
+    parser.add_argument("--worldcache_thresh", type=float, default=0.06,
+                        help="WorldCache accumulated relative-L1 threshold (default: 0.06)")
+    parser.add_argument("--worldcache_warmup", type=int, default=1,
+                        help="WorldCache per-block warmup steps that always run (default: 1)")
+    parser.add_argument("--block_ctx_thresh", type=float, default=0.0,
+                        help="Block-level ctx-update skip threshold (0=disabled); skips ctx update when consecutive block x0 delta < thresh")
     args = parser.parse_args()
     return args
 
@@ -87,6 +97,8 @@ class InteractiveGameInference:
             step_list = [round(1000 * (n - i) / n) for i in range(n)]
             self.config.denoising_step_list = step_list
             print(f"[MG2] denoising_step_list overridden to {step_list} ({n} steps)")
+        if getattr(self.args, 'block_ctx_thresh', 0.0):
+            self.config.block_ctx_thresh = self.args.block_ctx_thresh
 
     def _init_models(self):
         # Initialize pipeline
@@ -113,10 +125,86 @@ class InteractiveGameInference:
         self.pipeline = pipeline.to(device=self.device, dtype=self.weight_dtype)
         self.pipeline.vae_decoder.to(torch.float16)
 
+        if getattr(self.args, 'worldcache', False):
+            self._apply_worldcache()
+
         vae = get_wanx_vae_wrapper(self.args.pretrained_model_path, torch.float16)
         vae.requires_grad_(False)
         vae.eval()
         self.vae = vae.to(self.device, self.weight_dtype)
+
+    def _apply_worldcache(self):
+        """
+        Monkey-patches WanDiffusionWrapper.forward with WorldCache-style denoising-step caching.
+
+        Within each block's denoising loop (5 steps for VBench), after a per-block warmup
+        period, steps where the accumulated relative-L1 change in noisy input is below
+        --worldcache_thresh are skipped and the previous denoised output is reused.
+        Context-update passes (timestep==0, Step 3.3) always run and reset block state.
+        """
+        gen = self.pipeline.generator
+        thresh = self.args.worldcache_thresh
+        warmup = self.args.worldcache_warmup
+
+        # prev_out_old: x0_pred from step i-1; prev_out_new: x0_pred from step i
+        # Skip step i+1 when |prev_out_new - prev_out_old| / |prev_out_old| < thresh
+        # x0_pred (denoised output) converges across steps; noisy inputs do NOT
+        # (they contain fresh randn each step, making raw-input comparison useless).
+        state = dict(last_start=None, step=0,
+                     prev_out_old=None, prev_out_new=None,
+                     skipped=0, total=0)
+        _orig = gen.forward  # bound method – captures original before patch
+
+        def _wc_forward(self_, noisy_image_or_video, conditional_dict, timestep,
+                        kv_cache=None, kv_cache_mouse=None, kv_cache_keyboard=None,
+                        crossattn_cache=None, current_start=None, cache_start=None):
+            is_ctx = (current_start is None or timestep.max().item() == 0)
+
+            if is_ctx:
+                out = _orig(noisy_image_or_video, conditional_dict, timestep,
+                            kv_cache, kv_cache_mouse, kv_cache_keyboard,
+                            crossattn_cache, current_start, cache_start)
+                state.update(last_start=None, step=0, prev_out_old=None, prev_out_new=None)
+                return out
+
+            # Detect new block (current_start advanced)
+            if current_start != state['last_start']:
+                state.update(last_start=current_start, step=0,
+                             prev_out_old=None, prev_out_new=None)
+
+            state['total'] += 1
+            skip = False
+            if (state['prev_out_old'] is not None
+                    and state['prev_out_new'] is not None
+                    and state['step'] >= warmup):
+                # Improvement 4: downsample 4x spatially before delta — ~16x cheaper,
+                # same signal (x0 differences are spatially smooth).
+                ds = torch.nn.functional.avg_pool3d(
+                    state['prev_out_new'].float() - state['prev_out_old'].float(),
+                    kernel_size=(1, 4, 4), stride=(1, 4, 4))
+                ref = torch.nn.functional.avg_pool3d(
+                    state['prev_out_old'].float().abs(),
+                    kernel_size=(1, 4, 4), stride=(1, 4, 4)).mean() + 1e-8
+                delta = ds.abs().mean() / ref
+                if delta < thresh:
+                    skip = True
+                    state['skipped'] += 1
+
+            if not skip:
+                out = _orig(noisy_image_or_video, conditional_dict, timestep,
+                            kv_cache, kv_cache_mouse, kv_cache_keyboard,
+                            crossattn_cache, current_start, cache_start)
+                state['prev_out_old'] = state['prev_out_new']
+                state['prev_out_new'] = out[1].detach()
+            else:
+                out = (None, state['prev_out_new'])
+
+            state['step'] += 1
+            return out
+
+        gen.forward = types.MethodType(_wc_forward, gen)
+        gen._wc_state = state
+        print(f"[WorldCache] enabled: thresh={thresh}  warmup={warmup} steps/block")
 
     def _resizecrop(self, image, th, tw):
         w, h = image.size
@@ -388,6 +476,11 @@ class InteractiveGameInference:
             _sf.write(f"FPS log:        {fps_log}\n")
             _sf.write(f"Stats CSV:      {stats_csv}\n")
         print(f"[MG2-VBench] Stats: {stats_file}")
+
+        if getattr(self.args, 'worldcache', False):
+            wc = self.pipeline.generator._wc_state
+            skip_pct = 100.0 * wc['skipped'] / max(wc['total'], 1)
+            print(f"[WorldCache] steps skipped: {wc['skipped']}/{wc['total']} ({skip_pct:.1f}%)")
 
 
 def main():

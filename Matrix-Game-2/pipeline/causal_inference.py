@@ -320,7 +320,10 @@ class CausalInferencePipeline(torch.nn.Module):
         if profile:
             diffusion_start = torch.cuda.Event(enable_timing=True)
             diffusion_end = torch.cuda.Event(enable_timing=True)
-        for current_num_frames in tqdm(all_num_frames):
+        _block_ctx_thresh = getattr(self.args, 'block_ctx_thresh', 0.0)
+        _prev_block_pred = None   # for block-level ctx-update caching (improvement 3)
+        _ctx_skipped = 0
+        for block_idx, current_num_frames in enumerate(tqdm(all_num_frames)):
 
             noisy_input = noise[
                 :, :, current_start_frame - num_input_frames:current_start_frame + current_num_frames - num_input_frames]
@@ -372,18 +375,30 @@ class CausalInferencePipeline(torch.nn.Module):
             output[:, :, current_start_frame:current_start_frame + current_num_frames] = denoised_pred
 
             # Step 3.3: rerun with timestep zero to update KV cache using clean context
-            context_timestep = torch.ones_like(timestep) * self.args.context_noise
-            
-            self.generator(
-                noisy_image_or_video=denoised_pred,
-                conditional_dict=cond_current(conditional_dict, current_start_frame, self.num_frame_per_block, mode=mode),
-                timestep=context_timestep,
-                kv_cache=self.kv_cache1,
-                kv_cache_mouse=self.kv_cache_mouse,
-                kv_cache_keyboard=self.kv_cache_keyboard,
-                crossattn_cache=self.crossattn_cache,
-                current_start=current_start_frame * self.frame_seq_length,
-            )
+            # Skip for last block (KV cache never read again) — improvement 2.
+            # Skip for similar consecutive blocks (block-level WorldCache) — improvement 3.
+            _is_last_block = (block_idx == len(all_num_frames) - 1)
+            _skip_ctx = _is_last_block
+            if not _skip_ctx and _block_ctx_thresh > 0.0 and _prev_block_pred is not None:
+                _ref = _prev_block_pred.abs().mean() + 1e-8
+                _blk_delta = (denoised_pred - _prev_block_pred).abs().mean() / _ref
+                if _blk_delta < _block_ctx_thresh:
+                    _skip_ctx = True
+            if _skip_ctx:
+                _ctx_skipped += 1
+            else:
+                context_timestep = torch.ones_like(timestep) * self.args.context_noise
+                self.generator(
+                    noisy_image_or_video=denoised_pred,
+                    conditional_dict=cond_current(conditional_dict, current_start_frame, self.num_frame_per_block, mode=mode),
+                    timestep=context_timestep,
+                    kv_cache=self.kv_cache1,
+                    kv_cache_mouse=self.kv_cache_mouse,
+                    kv_cache_keyboard=self.kv_cache_keyboard,
+                    crossattn_cache=self.crossattn_cache,
+                    current_start=current_start_frame * self.frame_seq_length,
+                )
+            _prev_block_pred = denoised_pred.detach()
 
             # Step 3.4: update the start and end frame indices
             current_start_frame += current_num_frames
