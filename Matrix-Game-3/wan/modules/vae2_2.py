@@ -1353,3 +1353,145 @@ class Wan2_2_VAE:
         except Exception as e:
             logging.error(f"Error in stream_decode: {e}")
             return None, feat_cache
+
+
+# ---------------------------------------------------------------------------
+# Tiny VAE wrapper  (WAN 2.2 encoder  +  TAE tiny decoder)
+# ---------------------------------------------------------------------------
+
+class TinyVAE:
+    """Drop-in replacement for Wan2_2_VAE that uses the tiny TAE decoder.
+
+    Encoding uses the full WAN 2.2 VAE for accuracy (same as mg_lightvae).
+    Decoding uses the taew2_2 tiny decoder — significantly faster and smaller.
+
+    Interface is identical to Wan2_2_VAE: same ``scale``, ``encode(list)``,
+    ``decode(list)``.  ``stream_decode`` / ``_decode_body`` are *not* supported;
+    use this VAE type with ``--use_async_vae 0`` and ``--compile_vae 0``.
+
+    Args:
+        taesd_pth: Path to taew2_2.pth or taew2_2.safetensors.
+        wan_vae_pth: Path to Wan2.2_VAE.pth (full encoder).
+        device: torch device.
+        dtype: torch dtype.
+    """
+
+    def __init__(
+        self,
+        taesd_pth: str,
+        wan_vae_pth: str,
+        device="cuda",
+        dtype=torch.bfloat16,
+    ):
+        self.dtype = dtype
+        self.device = device
+
+        # --- same 48-ch normalization constants as Wan2_2_VAE ---
+        mean = torch.tensor(
+            [-0.2289, -0.0052, -0.1323, -0.2339, -0.2799,  0.0174,  0.1838,
+              0.1557, -0.1382,  0.0542,  0.2813,  0.0891,  0.1570, -0.0098,
+              0.0375, -0.1825, -0.2246, -0.1207, -0.0698,  0.5109,  0.2665,
+             -0.2108, -0.2158,  0.2502, -0.2055, -0.0322,  0.1109,  0.1567,
+             -0.0729,  0.0899, -0.2799, -0.1230, -0.0313, -0.1649,  0.0117,
+              0.0723, -0.2839, -0.2083, -0.0520,  0.3748,  0.0152,  0.1957,
+              0.1433, -0.2944,  0.3573, -0.0548, -0.1681, -0.0667],
+            dtype=dtype, device=device,
+        )
+        std = torch.tensor(
+            [0.4765, 1.0364, 0.4514, 1.1677, 0.5313, 0.4990, 0.4818, 0.5013,
+             0.8158, 1.0344, 0.5894, 1.0901, 0.6885, 0.6165, 0.8454, 0.4978,
+             0.5759, 0.3523, 0.7135, 0.6804, 0.5833, 1.4146, 0.8986, 0.5659,
+             0.7069, 0.5338, 0.4889, 0.4917, 0.4069, 0.4999, 0.6866, 0.4093,
+             0.5709, 0.6065, 0.6415, 0.4944, 0.5726, 1.2042, 0.5458, 1.6887,
+             0.3971, 1.0600, 0.3943, 0.5537, 0.5444, 0.4089, 0.7468, 0.7744],
+            dtype=dtype, device=device,
+        )
+        self.scale = [mean, 1.0 / std]
+
+        # --- full WAN 2.2 encoder (no decoder loaded — saves ~2 GB VRAM) ---
+        self.encoder_model = (
+            _video_vae(
+                pretrained_path=wan_vae_pth,
+                z_dim=48,
+                dim=160,
+                dim_mult=[1, 2, 4, 4],
+                temperal_downsample=[False, True, True],
+                pruning_rate=0.0,
+            ).eval().requires_grad_(False).to(device=device, dtype=dtype)
+        )
+        self.vae_type = "tinywan"
+
+        # --- tiny decoder ---
+        from wan.modules.tae import TAEModel
+        self.tiny_decoder = (
+            TAEModel(checkpoint_path=taesd_pth, latent_channels=48)
+            .eval().requires_grad_(False).to(device=device, dtype=dtype)
+        )
+        logging.info(f"TinyVAE loaded: encoder={wan_vae_pth}, tiny_decoder={taesd_pth}")
+
+    # -- encode: identical to Wan2_2_VAE (uses full WAN encoder) --
+    def encode(self, videos: list) -> list:
+        try:
+            if not isinstance(videos, list):
+                raise TypeError("videos should be a list")
+            return [
+                self.encoder_model.encode(
+                    u.unsqueeze(0).to(device=self.device, dtype=self.dtype),
+                    self.scale,
+                ).squeeze(0)
+                for u in videos
+            ]
+        except TypeError as e:
+            logging.info(e)
+            return None
+
+    # -- decode: uses tiny TAE decoder --
+    def decode(self, zs: list) -> list:
+        try:
+            if not isinstance(zs, list):
+                raise TypeError("zs should be a list")
+            results = []
+            for u in zs:
+                z = u.unsqueeze(0).to(device=self.device, dtype=self.dtype)
+                # z: (1, 48, T_lat, H_lat, W_lat)  NCTHW
+                # TAE expects NTCHW
+                z_ntchw = z.permute(0, 2, 1, 3, 4).contiguous()
+                frames = self.tiny_decoder.decode_video(z_ntchw)  # (1, T, 3, H, W)
+                # [0,1] → [-1,1]
+                frames = (frames * 2 - 1).clamp_(-1, 1)
+                # NTCHW → NCTHW
+                frames = frames.permute(0, 2, 1, 3, 4).squeeze(0)  # (3, T, H, W)
+                results.append(frames)
+            return results
+        except TypeError as e:
+            logging.info(e)
+            return None
+
+    def stream_decode(self, z, feat_cache, first_chunk=False, segment_size=5,
+                      profiler=None, compile_decoder=False):
+        """Decode a latent block — interface-compatible with Wan2_2_VAE.stream_decode.
+
+        feat_cache / first_chunk / segment_size are ignored; the TAE decoder is
+        stateless and processes the full block in one pass.
+
+        Args:
+            z: (B, 48, T_lat, H, W) latent block, NCTHW.
+            feat_cache: unused, returned as-is.
+
+        Returns:
+            (video, feat_cache):
+                video  — (B, 3, T, H, W) NCTHW in [-1, 1].
+                feat_cache — unchanged input.
+        """
+        try:
+            z = z.to(device=self.device, dtype=self.dtype)
+            # NCTHW → NTCHW
+            z_ntchw = z.permute(0, 2, 1, 3, 4).contiguous()
+            frames = self.tiny_decoder.decode_video(z_ntchw)  # (B, T, 3, H, W)
+            frames = (frames * 2 - 1).clamp_(-1, 1)
+            # NTCHW → NCTHW
+            video = frames.permute(0, 2, 1, 3, 4)  # (B, 3, T, H, W)
+            return video, feat_cache
+        except Exception as e:
+            logging.error(f"TinyVAE.stream_decode error: {e}")
+            return None, feat_cache

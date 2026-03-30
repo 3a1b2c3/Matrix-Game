@@ -85,8 +85,10 @@ def _parse_args():
 
     # VAE
     parser.add_argument("--vae_type", type=str, default="mg_lightvae_v2",
-        choices=["wan", "mg_lightvae", "mg_lightvae_v2"],
+        choices=["wan", "mg_lightvae", "mg_lightvae_v2", "taesd"],
         help="VAE type. Default: mg_lightvae_v2 (fastest).")
+    parser.add_argument("--taesd_path", type=str, default=None,
+        help="Path to taew2_2.pth/.safetensors for --vae_type taesd. Defaults to <ckpt_dir>/taew2_2.pth.")
     parser.add_argument("--lightvae_pruning_rate", type=float, default=0.75,
         help="LightVAE pruning rate. Default: 0.75 (v2).")
 
@@ -154,6 +156,7 @@ class _PipeArgs:
         self.use_int8              = args.use_int8
         self.verify_quant          = False
         self.vae_type              = args.vae_type
+        self.taesd_path            = getattr(args, 'taesd_path', None)
         self.lightvae_pruning_rate = args.lightvae_pruning_rate
         self.compile_vae           = getattr(args, 'compile_vae', False)
         self.use_async_vae         = False

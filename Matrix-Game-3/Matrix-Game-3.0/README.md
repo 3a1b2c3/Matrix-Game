@@ -66,43 +66,16 @@ Before running inference, you need to prepare:
 - Input image
 - Text prompt
 
-**Single GPU** (`python`, no distributed flags):
-``` sh
-python generate.py --size 704*1280 --ckpt_dir Matrix-Game-3.0 --fa_version 3 --use_int8 --num_iterations 12 --num_inference_steps 3 --image demo_images/000/image.png --prompt "a vintage gas station with a classic car parked under a canopy, set against a desert landscape." --save_name test --seed 42 --compile_vae --lightvae_pruning_rate 0.5 --vae_type mg_lightvae --output_dir ./output
-# "num_iterations" refers to the number of iterations you want to generate. The total number of frames generated is given by:57 + (num_iterations - 1) * 40
-```
-
-**Multi-GPU** (`torchrun` + FSDP):
+After downloading pretrained models, you can use the following command to generate an interactive video with random actions:
 ``` sh
 torchrun --nproc_per_node=$NUM_GPUS generate.py --size 704*1280 --dit_fsdp --t5_fsdp --ckpt_dir Matrix-Game-3.0 --fa_version 3 --use_int8 --num_iterations 12 --num_inference_steps 3 --image demo_images/000/image.png --prompt "a vintage gas station with a classic car parked under a canopy, set against a desert landscape." --save_name test --seed 42 --compile_vae --lightvae_pruning_rate 0.5 --vae_type mg_lightvae --output_dir ./output
+# "num_iterations" refers to the number of iterations you want to generate. The total number of frames generated is given by:57 + (num_iterations - 1) * 40 
 ```
-Tips:
+Tips: 
 If you want to use the base model, you can use "--use_base_model --num_inference_steps 50". Otherwise if you want to generating the interactive videos with your own input actions, you can use "--interactive".
 With multiple GPUs, you can pass `--use_async_vae --async_vae_warmup_iters 1` to speed up inference.
 
-### WorldCache (Inference Speedup)
-
-WorldCache ([github.com/umair1221/WorldCache](https://github.com/umair1221/WorldCache)) accelerates inference by caching DiT block outputs across denoising timesteps and skipping recomputation when the hidden-state drift is below a threshold. This is a training-free optimization.
-
-Enable with `--worldcache`:
-``` sh
-python generate.py --size 704*1280 --ckpt_dir Matrix-Game-3.0 --fa_version 3 --use_int8 \
-  --num_iterations 12 --num_inference_steps 3 \
-  --image demo_images/000/image.png --prompt "..." --save_name test \
-  --compile_vae --lightvae_pruning_rate 0.5 --vae_type mg_lightvae --output_dir ./output \
-  --worldcache --worldcache_thresh 0.40 --worldcache_warmup 1
-```
-
-| Argument | Default | Description |
-|---|---|---|
-| `--worldcache` | off | Enable WorldCache block-level feature caching |
-| `--worldcache_thresh` | `0.40` | Drift threshold for skipping a block. Lower = more accurate, fewer skips; higher = more skips, faster |
-| `--worldcache_warmup` | `1` | Number of denoising steps before caching starts per clip |
-
-Note: WorldCache effectiveness scales with `--num_inference_steps`. With the default distilled model (`--num_inference_steps 3`) there are few steps to cache across, so gains are modest. It is more effective with the base model (`--use_base_model --num_inference_steps 50`).
-
 ## ⭐ Acknowledgements
-- [WorldCache](https://github.com/umair1221/WorldCache) for the training-free denoising-step block caching technique
 - [Diffusers](https://github.com/huggingface/diffusers) for their excellent diffusion model framework
 - [Self-Forcing](https://github.com/guandeh17/Self-Forcing) for their excellent work
 - [GameFactory](https://github.com/KwaiVGI/GameFactory) for their idea of action control module

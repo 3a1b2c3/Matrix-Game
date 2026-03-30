@@ -39,14 +39,20 @@ set NUM_ITERATIONS=4
 set NUM_INFERENCE_STEPS=5
 set VAE_TYPE=mg_lightvae_v2
 set LIGHTVAE_PRUNING_RATE=0.75
+set TAESD_PATH=
 set FA_VERSION=2
 set USE_INT8=1
 set WORLDCACHE=
 set WORLDCACHE_THRESH=0.40
 set WORLDCACHE_WARMUP=1
-set COMPILE_VAE=
+set COMPILE_VAE=1
 set FPS=24
 set KEY_STRENGTH=0.5
+:: ──────────────────────────────────────────────────────────────────────────
+:: To use the tiny VAE decoder (fastest, ~3-5x vs LightVAE):
+::   set VAE_TYPE=taesd   (taew2_2.pth must be in <CKPT>\ — run download_model.bat --taesd)
+:: To use full WAN VAE (highest quality):
+::   set VAE_TYPE=wan
 :: ──────────────────────────────────────────────────────────────────────────
 
 :: Parse arguments — named flags anywhere, positional args fill OUTPUT_BASE / NUM_SAMPLES / IMAGE_TYPES
@@ -56,13 +62,16 @@ set IMAGE_TYPES=
 :argloop
 if "%~1"=="" goto :argdone
 if /i "%~1"=="--worldcache"  goto :arg_worldcache
+if /i "%~1"=="--world-cache" goto :arg_worldcache
 if /i "%~1"=="--compile_vae" goto :arg_compile_vae
+if /i "%~1"=="--vae_type"   goto :arg_vae_type
+if /i "%~1"=="--taesd_path" goto :arg_taesd_path
 if /i "%~1"=="--num_samples" goto :arg_num_samples
 if /i "%~1"=="--image_types" goto :arg_image_types
 if /i "%~1"=="--output_base" goto :arg_output_base
-:: fail on unknown --flags (use temp var for substring check)
+:: unknown --flags: show help
 set _A1=%~1
-if "%_A1:~0,2%"=="--" echo ERROR: Unknown flag: %~1 & exit /b 1
+if "%_A1:~0,2%"=="--" echo ERROR: Unknown flag: %~1& echo Run with --help for usage.& goto :help
 if not defined OUTPUT_BASE   goto :arg_pos_output
 if not defined NUM_SAMPLES   goto :arg_pos_samples
 if not defined IMAGE_TYPES   goto :arg_pos_types
@@ -71,11 +80,20 @@ shift & goto :argloop
 set WORLDCACHE=1
 :: optional threshold value: --worldcache 0.45
 set _A2=%~2
-if not "%_A2%"=="" if not "%_A2:~0,2%"=="--" set WORLDCACHE_THRESH=%~2 & shift
+if not "%_A2%"=="" if not "%_A2:~0,2%"=="--" (
+    set WORLDCACHE_THRESH=%_A2%
+    shift
+)
 shift & goto :argloop
 :arg_compile_vae
 set COMPILE_VAE=1
 shift & goto :argloop
+:arg_vae_type
+set VAE_TYPE=%~2
+shift & shift & goto :argloop
+:arg_taesd_path
+set TAESD_PATH=%~2
+shift & shift & goto :argloop
 :arg_num_samples
 set NUM_SAMPLES=%~2
 shift & shift & goto :argloop
@@ -150,6 +168,7 @@ set PY_ARGS=%PY_ARGS% --num_iterations %NUM_ITERATIONS%
 set PY_ARGS=%PY_ARGS% --num_inference_steps %NUM_INFERENCE_STEPS%
 set PY_ARGS=%PY_ARGS% --vae_type %VAE_TYPE%
 set PY_ARGS=%PY_ARGS% --lightvae_pruning_rate %LIGHTVAE_PRUNING_RATE%
+if defined TAESD_PATH if not "%TAESD_PATH%"=="" set PY_ARGS=%PY_ARGS% --taesd_path "%TAESD_PATH%"
 set PY_ARGS=%PY_ARGS% --fa_version %FA_VERSION%
 set PY_ARGS=%PY_ARGS% --fps %FPS%
 set PY_ARGS=%PY_ARGS% --key_strength %KEY_STRENGTH%
@@ -160,7 +179,7 @@ if defined COMPILE_VAE set PY_ARGS=%PY_ARGS% --compile_vae
 echo.
 echo [MG3-VBench] Generating %NUM_SAMPLES% samples per prompt...
 chcp 65001 >nul
-python "%ROOT%\generate_vbench.py" %PY_ARGS% 2>&1 | powershell -Command "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $input | Tee-Object -FilePath '%LOG_FILE%' -Encoding UTF8; exit $LASTEXITCODE"
+python "%ROOT%\generate_vbench.py" %PY_ARGS% 2>&1 | powershell -Command "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $input | Tee-Object -FilePath '%LOG_FILE%'; exit $LASTEXITCODE"
 set EXIT_CODE=%ERRORLEVEL%
 echo [MG3-VBench] Done. Exit: %EXIT_CODE%
 
