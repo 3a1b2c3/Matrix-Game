@@ -1,7 +1,9 @@
-torch>=2.4.0
-torchvision>=0.19.0
+--index-url https://urm.nvidia.com/artifactory/api/pypi/nv-shared-pypi/simple
+--extra-index-url https://download.pytorch.org/whl/cu128
+--index-url https://pypi.org/simple
+
 opencv-python>=4.9.0.80
-diffusers
+diffusers==0.35.1
 transformers>=4.49.0
 tokenizers>=0.20.3
 accelerate>=1.1.1
@@ -29,9 +31,6 @@ pydantic
 scikit-image
 huggingface_hub[cli]
 dominate
-nvidia-pyindex
-nvidia-tensorrt
-pycuda
 onnx
 onnxruntime
 onnxscript
@@ -39,3 +38,11 @@ onnxconverter_common
 flask
 flask-socketio
 torchao
+torch>=2.4.0
+torchvision>=0.19.0
+#nvidia-pyindex
+#pycuda
+#nvidia-tensorrt
+# unisttall xformer
+#flash_attn-2.7.4.post1%2Bcu128torch2.7.0cxx11abiFALSE-cp312-cp312-win_amd64.whl
+#iton-windows

@@ -1,7 +1,13 @@
 import os
 import argparse
+import sys
+#os.environ["TORCH_USE_FLASH_ATTENTION"] = "0"
 import torch
 import numpy as np
+
+# Disable flash attention
+torch.backends.cuda.enable_flash_sdp(False)
+
 
 from omegaconf import OmegaConf
 from torchvision.transforms import v2
@@ -61,7 +67,8 @@ class InteractiveGameInference:
         current_vae_decoder.to(self.device, torch.float16)
         current_vae_decoder.requires_grad_(False)
         current_vae_decoder.eval()
-        current_vae_decoder.compile(mode="max-autotune-no-cudagraphs")
+        if os.name != 'nt':  # Disable torch.compile if running on Windows
+            current_vae_decoder.compile(mode="max-autotune-no-cudagraphs")
         pipeline = CausalInferencePipeline(self.config, generator=generator, vae_decoder=current_vae_decoder)
         if self.args.checkpoint_path:
             print("Loading Pretrained Model...")
