@@ -9,14 +9,6 @@ __pycache__/
 *.so
 
 # Distribution / packaging
-checkpoints/
-Matrix-Game-1/assets/
-Matrix-Game-2/assets/
-Matrix-Game-2/data/
-Matrix-Game-2/*.pth
-Matrix-Game-2/outputs/
-Matrix-Game-2/demo_images/
-data/
 bin/
 build/
 develop-eggs/
@@ -32,7 +24,6 @@ var/
 .installed.cfg
 *.egg
 .eggs/
-*.pth
 
 # IDE-related
 .idea/
