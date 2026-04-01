@@ -15,7 +15,8 @@
 
 This repository provides the official implementations of Matrix-Game-1.0, Matrix-Game-2.0 and Matrix-Game-3.0
 
-https://github.com/user-attachments/assets/958cbdba-cae5-4b9c-afa2-33db3ec2757c
+https://github.com/user-attachments/assets/f5387c64-1d18-414a-935f-00a1f6eec8de
+
 
 
 ## 📄 License
