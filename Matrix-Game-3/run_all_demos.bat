@@ -5,9 +5,9 @@ cd /d "%~dp0"
 
 set SIZE=704*1280
 set CKPT_DIR=Matrix-Game-3.0
-set FA_VERSION=3
+set FA_VERSION=2
 set NUM_ITERATIONS=12
-set NUM_INFERENCE_STEPS=3
+set NUM_INFERENCE_STEPS=5
 set OUTPUT_DIR=./output
 
 echo Output directory: %~dp0output
@@ -33,9 +33,8 @@ for /d %%D in (demo_images\*) do (
             --prompt "!PROMPT!" ^
             --save_name !FOLDER! ^
             --seed 42 ^
-            --compile_vae ^
-            --lightvae_pruning_rate 0.5 ^
-            --vae_type mg_lightvae ^
+            --lightvae_pruning_rate 0.75 ^
+            --vae_type mg_lightvae_v2 ^
             --output_dir %OUTPUT_DIR%
 
         if !errorlevel! neq 0 (

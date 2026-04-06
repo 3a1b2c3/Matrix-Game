@@ -3,6 +3,7 @@ import json
 import numpy as np
 import logging
 import subprocess
+import urllib.request
 import torch
 import re
 from pathlib import Path
@@ -273,8 +274,8 @@ def init_submodules(dimension_list, local=False, read_frame=False):
             if local:
                 vit_b_path = f'{CACHE_DIR}/clip_model/ViT-B-32.pt'
                 if not os.path.isfile(vit_b_path):
-                    wget_command = ['wget', 'https://openaipublic.azureedge.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af/ViT-B-32.pt', '-P', os.path.dirname(vit_b_path)]
-                    subprocess.run(wget_command, check=True)
+                    os.makedirs(os.path.dirname(vit_b_path), exist_ok=True)
+                    urllib.request.urlretrieve('https://openaipublic.azureedge.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af/ViT-B-32.pt', vit_b_path)
             else:
                 vit_b_path = 'ViT-B/32'
 
@@ -289,9 +290,8 @@ def init_submodules(dimension_list, local=False, read_frame=False):
             # Check if the file exists, if not, download it with wget
             if not os.path.isfile(details['ckpt']):
                 print(f"File {details['ckpt']} does not exist. Downloading...")
-                wget_command = ['wget', '-P', os.path.dirname(details['ckpt']),
-                                'https://huggingface.co/lalala125/AMT/resolve/main/amt-s.pth']
-                subprocess.run(wget_command, check=True)
+                os.makedirs(os.path.dirname(details['ckpt']), exist_ok=True)
+                urllib.request.urlretrieve('https://huggingface.co/lalala125/AMT/resolve/main/amt-s.pth', details['ckpt'])
         elif dimension == 'action_control':
             submodules_dict[dimension] = {}
         elif dimension == 'object_consistency':
@@ -302,16 +302,16 @@ def init_submodules(dimension_list, local=False, read_frame=False):
             if local:
                 vit_l_path = f'{CACHE_DIR}/clip_model/ViT-L-14.pt'
                 if not os.path.isfile(vit_l_path):
-                    wget_command = ['wget' ,'https://openaipublic.azureedge.net/clip/models/b8cca3fd41ae0c99ba7e8951adf17d267cdb84cd88be6f7c2e0eca1737a03836/ViT-L-14.pt', '-P', os.path.dirname(vit_l_path)]
-                    subprocess.run(wget_command, check=True)
+                    os.makedirs(os.path.dirname(vit_l_path), exist_ok=True)
+                    urllib.request.urlretrieve('https://openaipublic.azureedge.net/clip/models/b8cca3fd41ae0c99ba7e8951adf17d267cdb84cd88be6f7c2e0eca1737a03836/ViT-L-14.pt', vit_l_path)
             else:
                 vit_l_path = 'ViT-L/14'
             submodules_dict[dimension] = [vit_l_path, aes_path]
         elif dimension == 'imaging_quality':
             musiq_spaq_path = f'{CACHE_DIR}/pyiqa_model/musiq_spaq_ckpt-358bb6af.pth'
             if not os.path.isfile(musiq_spaq_path):
-                wget_command = ['wget', 'https://github.com/chaofengc/IQA-PyTorch/releases/download/v0.1-weights/musiq_spaq_ckpt-358bb6af.pth', '-P', os.path.dirname(musiq_spaq_path)]
-                subprocess.run(wget_command, check=True)
+                os.makedirs(os.path.dirname(musiq_spaq_path), exist_ok=True)
+                urllib.request.urlretrieve('https://github.com/chaofengc/IQA-PyTorch/releases/download/v0.1-weights/musiq_spaq_ckpt-358bb6af.pth', musiq_spaq_path)
             submodules_dict[dimension] = {'model_path': musiq_spaq_path}
         elif dimension == 'scenario_consistency':
             submodules_dict[dimension] = {}

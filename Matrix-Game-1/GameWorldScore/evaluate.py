@@ -112,7 +112,7 @@ def main():
     
     print0(f'start evaluation')
 
-    current_time = datetime.now().strftime('%Y-%m-%d-%H:%M:%S')
+    current_time = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
 
     kwargs = {}
 
