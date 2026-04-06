@@ -12,6 +12,21 @@ import atexit
 import time
 import torch.distributed as dist
 
+try:
+    import psutil as _psutil
+    def _warn_ram_cliff(label: str = "", warn_pct: float = 80.0, critical_pct: float = 90.0):
+        vm = _psutil.virtual_memory()
+        used_pct = vm.percent
+        avail_gb = vm.available / (1024 ** 3)
+        total_gb = vm.total / (1024 ** 3)
+        if used_pct >= critical_pct:
+            print(f"\033[91m[RAM CRITICAL] {label} RAM {used_pct:.1f}% used — only {avail_gb:.1f}/{total_gb:.1f} GB free. Risk of OOM swap!\033[0m", flush=True)
+        elif used_pct >= warn_pct:
+            print(f"\033[93m[RAM WARNING]  {label} RAM {used_pct:.1f}% used — {avail_gb:.1f}/{total_gb:.1f} GB free.\033[0m", flush=True)
+except ImportError:
+    def _warn_ram_cliff(label: str = "", warn_pct: float = 80.0, critical_pct: float = 90.0):
+        pass
+
 from PIL import Image
 from tqdm import tqdm
 from einops import rearrange
@@ -686,7 +701,9 @@ class MatrixGame3Pipeline:
                             compile_decoder=do_compile
                         )
                         all_videos_list.append(video.cpu())
-                        
+                        if self.rank == 0:
+                            _warn_ram_cliff(f"clip {clip_idx+1}/{num_iterations}")
+
                 all_latents_list.append(denoised_pred)
                 current_frames = 57 if first_clip else 40
                 total_frames += current_frames
@@ -741,6 +758,13 @@ class MatrixGame3Pipeline:
                         fps=getattr(args, 'fps', 24),
                     )
                     print(f"Saved concatenated video with {len(all_videos_list)} segments")
+                    # Save action sidecar for action-following evaluation
+                    sidecar_path = f"{self.output_dir}/{save_name}.action.npy"
+                    import numpy as _np
+                    _np.save(sidecar_path, {
+                        "keyboard": keyboard_condition_all.squeeze(0).float().cpu().numpy(),
+                        "mouse":    mouse_condition_all.squeeze(0).float().cpu().numpy(),
+                    })
                     video = torch.concat(all_videos_list, dim=2)[0]
                 else:
                     video = None

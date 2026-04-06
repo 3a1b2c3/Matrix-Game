@@ -44,15 +44,24 @@ pushd "%GWS_DIR%"
 
 python evaluate.py ^
     --videos_path "%VIDEOS_PATH%" ^
-    --dimension temporal_consistency aesthetic_quality imaging_quality motion_smoothness object_consistency ^
+    --dimension temporal_consistency aesthetic_quality imaging_quality motion_smoothness ^
     --mode GameWorld_custom ^
     --output_path "%OUTPUT_PATH%"
 
 set EXIT_CODE=%ERRORLEVEL%
+
+:: MG3 action-following (optical flow vs keyboard sidecar)
+echo.
+echo [MG3] Running action-following evaluation...
+python "%GWS_DIR%\GameWorld\mg3_action_control.py" ^
+    --videos_path "%VIDEOS_PATH%" ^
+    --output_path "%OUTPUT_PATH%"
+set ACT_CODE=%ERRORLEVEL%
+
 popd
 
 echo ============================================================
-echo Done. Exit: %EXIT_CODE%
+echo Done. Perceptual exit: %EXIT_CODE%  Action-following exit: %ACT_CODE%
 echo Results: %OUTPUT_PATH%
 echo ============================================================
 
