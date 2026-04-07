@@ -19,3 +19,12 @@ decord
 tensorboard
 trimesh
 safetensors==0.7.0
+psutil
+
+# GameWorldScore evaluation (run_gameworld_score.bat)
+pyiqa
+timm>=0.9
+scikit-learn
+scikit-image
+omegaconf
+openai-clip
