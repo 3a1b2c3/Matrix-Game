@@ -10,6 +10,8 @@ set ROOT=%~dp0
 if "%ROOT:~-1%"=="\" set ROOT=%ROOT:~0,-1%
 
 set GWS_DIR=C:\workspace\world\matrix3\Matrix-Game-1\GameWorldScore
+set PYTHON=C:\workspace\world\DeepVerse\.venv\Scripts\python.exe
+set PYTHONIOENCODING=utf-8
 
 set VIDEOS_PATH=%~1
 set OUTPUT_PATH=%~2
@@ -42,7 +44,7 @@ echo ============================================================
 
 pushd "%GWS_DIR%"
 
-python evaluate.py ^
+"%PYTHON%" evaluate.py ^
     --videos_path "%VIDEOS_PATH%" ^
     --dimension temporal_consistency aesthetic_quality imaging_quality motion_smoothness ^
     --mode GameWorld_custom ^
@@ -53,7 +55,7 @@ set EXIT_CODE=%ERRORLEVEL%
 :: MG3 action-following (optical flow vs keyboard sidecar)
 echo.
 echo [MG3] Running action-following evaluation...
-python "%GWS_DIR%\GameWorld\mg3_action_control.py" ^
+"%PYTHON%" "%GWS_DIR%\GameWorld\mg3_action_control.py" ^
     --videos_path "%VIDEOS_PATH%" ^
     --output_path "%OUTPUT_PATH%"
 set ACT_CODE=%ERRORLEVEL%
