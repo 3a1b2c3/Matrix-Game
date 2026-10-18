@@ -127,6 +127,54 @@ A richer design - several reference frames plus pose-indexed spatial memory, sho
 
 Repo copied to `/home/kschmid/Matrix-Game-4` (rsync, excluding `outputs/`, `captures/`, `resources/`, `.venv/`, game build/bin). `scripts/dgx/setup_dgx.sh` run there too (same script, aarch64-agnostic): Python 3.12 venv, torch 2.12.0/cu132, `matrix-game` command installed and verified against the GPU. Weights not downloaded yet (would need ~25 GB and the GPU free). The 32 GB card is shared by other processes on this machine; check `nvidia-smi` before any run here. Whether the `quality` (bf16) preset fits in 32 GB at 864x480 is unconfirmed; `rtx5090`/`rtx5090-sage` (FP8 DiT linears, same checkpoints) are the README's recommended presets for this GPU.
 
+## AgentGarten (Cosmos 3 renderer) on an engine-rendered take
+
+Separate from the Matrix-Game-4 racing model above: fed a `take-001` recording into [MirroS-Lab/AgentGarten](https://github.com/MirroS-Lab/AgentGarten) (`C:\workspace\world\AgentGarten`, DGX checkout `/localhome/kschmid/AgentGarten`), whose neural renderer is a distilled Cosmos 3 model (`weights/AgentGarten-renderer`, checkpoint iteration 1270). AgentGarten's manifest format hard-requires three real per-clip artifacts (`video`, `depth`, `normal`; confirmed by reading `wm/data/video.py` and `wm/networks/cosmos3/conditioner.py` directly, no optional/synthetic path exists).
+
+**Depth/normal source.** Tried ViPE (SLAM-based depth) and NormalCrafter (video diffusion normal estimation) first, both installed and working, but then switched to something more exact: the racing engine already rasterizes real 3D geometry, so a new `Renderer::renderGeometryBuffers()` method (added to `game/racing/src/RendererGL.cpp`/`Renderer.h`, purely additive - the live/offline RGB path is untouched) replays a take's exact recorded camera through the scene and reads back the real GL depth buffer and per-face normals (`normalize(cross(dFdx(vWorld),dFdy(vWorld)))`). A new standalone tool, `game/racing/tools/export-gbuffer.cpp`, drives this against `captures/<take>/frames.jsonl`. Built and ran clean against `take-001` on the first attempt (WSL RTX 5090 build, not the DGX - the DGX has no SDL2/FFmpeg/GL dev libraries to build the native game at all).
+
+**Known limitation, not fixed:** `frames.jsonl` only records the player's own camera pose, not other actors, and no simulation seed is saved. So static geometry (buildings, roads) gets exact depth/normal; moving traffic and pedestrians are independently re-simulated and will not match the original recording's positions.
+
+**Inference.** `weights/AgentGarten-renderer` (iteration 1270) + `weights/Wan2.2-TI2V-5B` loaded on the DGX GB300 (27 GiB resident, shared GPU had ~138 GiB free). No ready-made CLI existed for feeding a manifest row through the released streaming API, so wrote `scripts/run_matrix4_inference.py`: builds the anchor latent and per-block depth/normal/text conditions directly from the manifest (bypassing `ManifestVideoDataset`'s `torchcodec` reader, which has no aarch64 wheel - used `ffmpeg` instead), then streams through `Cosmos3Stream` with `RCM_ENDPOINTS`'s 4-step rCM schedule, exactly as README.md's inference snippet. One real bug hit and fixed: `conditioner.condition()` builds a *new* `TextContext` object per call, but `Cosmos3Stream` identifies "same prompt" by object identity, so calling it once per block raised `ValueError: update_text explicitly before changing stream text`; fixed by encoding text once and reusing that one `TextContext` across every block's `Cosmos3Condition`.
+
+Two real runs, both from the same `take-001` engine-rendered video+depth+normal, no synthetic data anywhere in the chain:
+- 33 frames (2 blocks) - `AgentGarten/outputs/matrix4_take001/sample.mp4`
+- 385 frames (24 blocks, ~8s, nearly the whole take) - `AgentGarten/outputs/matrix4_take001_full/sample.mp4`
+
+Not yet done: no quality assessment against the Matrix-Game-4 racing model's own renders; the moving-actor mismatch above is unaddressed; only one caption tried.
+
+## Limitations
+
+What we actually found this session, not speculation; each item has a render, a log or a code search behind it.
+
+**Conditioning and control**
+- No classifier-free guidance anywhere in the inference path - confirmed by code search (`stream.push()` calls the DiT once per step, no unconditional branch, no guidance-scale argument), not just the `"cfg_scale": 1` in `inference.json`. There is no "strengthen the prompt" dial.
+- The reference (sink) image dominates the prompt for the whole clip, not just frame 0, when they conflict: a rain prompt on the sunny-taxi reference (`racing_take001_taxi_rain`) stayed dry and sunlit throughout.
+- Aligning the prompt with the reference instead of fighting it moves the output much further (`racing_take001_taxi_sunrain`: mean pixel diff 37.6 / 63% of pixels changed against the plain sunny-taxi render, versus 14.2 / 38% for the conflicting version) but still cannot manufacture a visual property the reference photo does not show (no wet-asphalt sheen in either rain variant).
+- Prompt text has no effect on concepts outside the training distribution: `racing_take001_spell` ("a glowing magical spell") produced no visible effect at all across 8 sampled frames, same seed and take as every other test.
+- Heavy repetition of the key term (`racing_take001_rain_repeat`: "rain" repeated ~12 times in varied phrasing) moved the output measurably further than one mention (mean pixel diff 16.2 / 46% changed vs. the single-mention rain render), but did not cross the same ceiling - still no visible raindrops or puddles. Repetition is a real but small amplifier, not a way past the limit.
+- Combining the two strongest levers (reinforcing reference image + repeated prompt, `racing_take001_taxi_sunrain_repeat`) does not stack: mean pixel diff from the plain sunny-taxi baseline was 37.7, statistically the same as reinforcement alone (37.6, `racing_take001_taxi_sunrain`). The two effects plateau rather than add. Six total renders (default+rain, sunny+conflicting-rain, sunny+reinforcing-rain, repeated-rain, repeated+reinforcing, rain-after-1s-dynamic) never produced a visible raindrop, puddle or wet-asphalt sheen that was not already present in the reference image. The only route to a convincing weather look found this session is a reference photo that already shows it (as with the snow render).
+- Live event prompts (the Cast/Cast spell/Make it rain/Night falls buttons) are confirmed to reach the server and apply (`report.prompt` verified to match exactly, `prompt_updates` incrementing, via `verify_event_prompt.py`), but only for one chunk (~167 ms) before the game's own dynamic caption overwrites it again - a flicker, not a standing change.
+- One reference image per render or live session; see Reference images above for the full code-search detail.
+
+**Generation quality and stability**
+- Long or fast drives, or a near-static control video (car stopped), drift away from the input over time - worse on the reduced-precision `ring-fused` runtime, which the server itself warns changes floating-point reduction order. A per-chunk dynamic caption that restates the look every chunk (`racing_take001_rain1s`) gives a precisely timed, visible transition but the same weak-adherence ceiling as a fixed prompt.
+- More denoising steps (8 vs 4) did not clearly improve prompt adherence or reduce drift in our tests - no evidence it is the fix.
+- Sizes other than 864x480 (`MATRIX_GAME_RENDER_SIZE`) are unvalidated against the checkpoint; 1728x960 drifted to an unrelated scene by frame 700 in testing.
+
+**Scope of what is released**
+- No training code, no dataset, no sample recordings anywhere in this repo.
+- The technical report's training data includes a fourth scene, desert-canyon air combat (28,720 clips, 643 hours), that is not among the released checkpoints - only racing, castle and ancient-egypt ship.
+- The paper's fuller architecture (multiple reference frames, pose-indexed spatial memory, a coding-agent harness) is not implemented in this released code. `memory_mode="kvbank"` exists in `rollout.py` but `CastleStream` hardcodes `memory_mode="none"` and nothing in the repo ever sets it otherwise - dead code on every path we can run. No pose-indexed logic exists anywhere in `matrix_game/inference/`.
+- Shooter (castle/Egypt) offline recording does not work headless: `game/src/OfflineDemo.cpp` always opens a real SDL window, unlike racing's `--hidden` EGL path. Only the shooter's live-serve path (`CastleReferenceServer`, headless via `CASTLE_EGL=1`, set automatically by `matrix_game/server/game.py`) works without a display.
+- Dynamic prompt mode is racing-only at the CLI level (`cli.py`); castle and ancient-egypt are hard-blocked to fixed prompts, so their live event-prompt buttons can never confirm.
+
+**Performance**
+- Our live measurements never matched the technical report's claimed 112 ms / 83 FPS. The report's number requires FP8 weights, CUDA Graph replay and split-KV FlashAttention together (`rtx5090` preset); we ran `realtime` (ring-fused, bf16, no FP8) on a GPU shared with other processes, and measured 655-1141 ms during actual live play (vs. ~200 ms in a clean, uncontended benchmark). The `rtx5090` preset itself was never tested end to end here.
+
+**Data quality**
+- `caption-catalog.json` has real authoring errors: of 15 entries sampled out of 864, two have `short`/`full` descriptions that disagree on color, and one (`id 20`) is mislabeled `kind: "building"` while its `full` text describes a bag of construction debris. Not scanned beyond that sample.
+
 ## Known issues
 
 - Long or fast drives drift away from the input (scene layout, car, weather). A fixed prompt cannot hold a weather look; per-chunk captions (above) are the untested next step.

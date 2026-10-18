@@ -1,0 +1,25 @@
+<!doctype html>
+<!-- Game switcher: a local, no-server page. Each scene is its own process on its own fixed port (the model loads once per
+     process; there's no way to swap scenes inside one running server), so "switching" just means going to that port.
+     Deep link with ?game=racing|castle|ancient-egypt to redirect straight there; opened plain, it's a picker. -->
+<html lang="en"><head><meta charset="utf-8"><title>Matrix-Game switcher</title>
+<style>
+body{margin:0;background:#111;color:#fff;font:16px system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:14px}
+h1{font-size:18px;margin:0 0 6px}
+a{display:block;width:280px;text-align:center;padding:14px;border-radius:6px;background:#292929;border:1px solid #666;color:#fff;text-decoration:none}
+a:hover{background:#383838}
+.note{color:#999;font-size:13px;max-width:320px;text-align:center}
+</style></head>
+<body>
+<h1>Matrix-Game</h1>
+<a href="http://127.0.0.1:8025/">City Racing</a>
+<a href="http://127.0.0.1:8026/">Medieval Castle</a>
+<a href="http://127.0.0.1:8027/">Ancient Egypt</a>
+<p class="note">Each is its own server process; only scenes started on the DGX will actually load.
+Check with <code>scripts\wsl\start_live.bat status</code>.</p>
+<script>
+const game = new URLSearchParams(location.search).get('game');
+const port = {racing: 8025, castle: 8026, 'ancient-egypt': 8027}[game];
+if (port) location.replace(`http://127.0.0.1:${port}/`);
+</script>
+</body></html>

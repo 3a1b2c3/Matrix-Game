@@ -262,6 +262,20 @@ vec3 d=mix(vec3(10000),abs(vBary)/gradient,vEdge);
 if(outlineWidth>0.0&&min(d.x,min(d.y,d.z))<outlineWidth)c=vec3(0);
 }outputColor=vec4(c,1);}
 )";
+// Exact (not estimated) geometry buffer: per-pixel world-space flat normal from screen-space derivatives of
+// the already-interpolated world position (dFdx/dFdy), and view-space linear depth. Shares vertexSource (same
+// vWorld varying) with the scene pass; only the fragment stage differs, so this never touches render()'s output.
+const char* gbufferFragmentSource=R"(#version 330 core
+in vec3 vBary;flat in vec3 vEdge;flat in vec4 vColor;
+in vec3 vWorld;flat in float vSurface;
+uniform vec3 cameraEye,cameraForward;
+out vec4 outputColor;
+void main(){
+    vec3 normal=normalize(cross(dFdx(vWorld),dFdy(vWorld)));
+    float depth=dot(vWorld-cameraEye,cameraForward);
+    outputColor=vec4(normal,depth);
+}
+)";
 const char* uiVertexSource=R"(#version 330 core
 layout(location=0) in vec2 p;layout(location=1) in vec4 c;
 uniform vec2 viewport;out vec4 color;
@@ -359,6 +373,8 @@ struct Renderer::GlState {
     GLuint resizeProgram=0,resizeVao=0;
     std::array<GLuint,2> resizeFbos{},resizeTextures{};
     int resizeWidth=0,resizeHeight=0,resizeSourceHeight=0;
+    GLuint gbufferProgram=0,gbufferFbo=0,gbufferTexture=0,gbufferDepth=0;
+    int gbufferWidth=0,gbufferHeight=0;
     ~GlState(){if(!context&&!headless)return;
         if(headless)headless->makeCurrent();else SDL_GL_MakeCurrent(window,context);
         if(!functionsLoaded){if(context)SDL_GL_DeleteContext(context);activeHeadless=nullptr;return;}
@@ -499,6 +515,55 @@ void Renderer::render(const std::vector<DrawObject>& objects,const Camera& camer
     drawHud(hud);if(measure){glEndQuery(GL_TIME_ELAPSED);timer.pending=true;}
     blitToWindow();
     GLenum error=glGetError();if(error!=GL_NO_ERROR)throw std::runtime_error("OpenGL draw error: "+std::to_string(error));
+}
+std::vector<float> Renderer::renderGeometryBuffers(const std::vector<DrawObject>& objects,const Camera& camera){
+    GLint previousDraw=0,previousRead=0;glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING,&previousDraw);glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING,&previousRead);
+    if(!gl->gbufferProgram)gl->gbufferProgram=program(vertexSource,gbufferFragmentSource);
+    if(gl->gbufferWidth!=width||gl->gbufferHeight!=height){
+        if(gl->gbufferFbo)glDeleteFramebuffers(1,&gl->gbufferFbo);
+        if(gl->gbufferTexture)glDeleteTextures(1,&gl->gbufferTexture);
+        if(gl->gbufferDepth)glDeleteTextures(1,&gl->gbufferDepth);
+        glGenFramebuffers(1,&gl->gbufferFbo);glGenTextures(1,&gl->gbufferTexture);glGenTextures(1,&gl->gbufferDepth);
+        glBindTexture(GL_TEXTURE_2D,gl->gbufferTexture);
+        glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA32F,width,height,0,GL_RGBA,GL_FLOAT,nullptr);
+        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+        glBindTexture(GL_TEXTURE_2D,gl->gbufferDepth);
+        glTexImage2D(GL_TEXTURE_2D,0,GL_DEPTH_COMPONENT24,width,height,0,GL_DEPTH_COMPONENT,GL_UNSIGNED_INT,nullptr);
+        glBindFramebuffer(GL_FRAMEBUFFER,gl->gbufferFbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,gl->gbufferTexture,0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_TEXTURE_2D,gl->gbufferDepth,0);
+        if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE)throw std::runtime_error("Incomplete geometry-buffer target");
+        gl->gbufferWidth=width;gl->gbufferHeight=height;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER,gl->gbufferFbo);glViewport(0,0,width,height);
+    glEnable(GL_DEPTH_TEST);glDepthMask(GL_TRUE);glDisable(GL_BLEND);glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    glUseProgram(gl->gbufferProgram);auto matrix=viewProjection(camera,float(width)/height);
+    glUniformMatrix4fv(glGetUniformLocation(gl->gbufferProgram,"viewProjection"),1,GL_FALSE,&matrix.m[0][0]);
+    const V3 f=(camera.target-camera.eye).normalized(),right=cross({0,1,0},f).normalized(),up=cross(f,right);
+    glUniform3f(glGetUniformLocation(gl->gbufferProgram,"cameraEye"),camera.eye.x,camera.eye.y,camera.eye.z);
+    glUniform3f(glGetUniformLocation(gl->gbufferProgram,"cameraForward"),f.x,f.y,f.z);
+    float tx=std::tan(camera.horizontalFov*Pi/360),ty=tx*height/width;
+    std::vector<std::vector<Instance>> batches(gl->meshes.size());
+    for(const auto& o:objects){V3 d=o.center-camera.eye;float z=dot(d,f),r=o.radius;
+        if(z+r<.08f||d.length()>o.range+r||std::abs(dot(d,right))>z*tx+r*(1+tx)||std::abs(dot(d,up))>z*ty+r*(1+ty))continue;
+        batches.at(o.mesh).push_back(o.instance);}
+    std::vector<Instance> all;for(const auto& b:batches)all.insert(all.end(),b.begin(),b.end());
+    glBindBuffer(GL_ARRAY_BUFFER,gl->instances);glBufferData(GL_ARRAY_BUFFER,GLsizeiptr(all.size()*sizeof(Instance)),all.data(),GL_STREAM_DRAW);
+    size_t offset=0;
+    for(size_t i=0;i<gl->meshes.size();++i){const auto& batch=batches[i];if(batch.empty())continue;const auto& m=gl->meshes[i];glBindVertexArray(m.vao);glBindBuffer(GL_ARRAY_BUFFER,gl->instances);
+        for(int j=0;j<4;++j){glEnableVertexAttribArray(4+j);glVertexAttribPointer(4+j,4,GL_FLOAT,GL_FALSE,sizeof(Instance),reinterpret_cast<void*>(offset+size_t(j)*16));glVertexAttribDivisor(4+j,1);}
+        glEnableVertexAttribArray(8);glVertexAttribPointer(8,4,GL_FLOAT,GL_FALSE,sizeof(Instance),reinterpret_cast<void*>(offset+offsetof(Instance,color)));glVertexAttribDivisor(8,1);
+        glEnableVertexAttribArray(9);glVertexAttribPointer(9,1,GL_FLOAT,GL_FALSE,sizeof(Instance),reinterpret_cast<void*>(offset+offsetof(Instance,surface)));glVertexAttribDivisor(9,1);
+        glDrawArraysInstanced(GL_TRIANGLES,0,m.count,GLsizei(batch.size()));offset+=batch.size()*sizeof(Instance);}
+    std::vector<float> pixels(size_t(width)*height*4),flipped(pixels.size());
+    glBindBuffer(GL_PIXEL_PACK_BUFFER,0);glPixelStorei(GL_PACK_ALIGNMENT,4);glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glReadPixels(0,0,width,height,GL_RGBA,GL_FLOAT,pixels.data());
+    const size_t stride=size_t(width)*4;
+    for(int y=0;y<height;++y)std::memcpy(flipped.data()+size_t(y)*stride,pixels.data()+size_t(height-1-y)*stride,stride*sizeof(float));
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER,GLuint(previousDraw));glBindFramebuffer(GL_READ_FRAMEBUFFER,GLuint(previousRead));
+    glViewport(0,0,width,height);
+    if(glGetError()!=GL_NO_ERROR)throw std::runtime_error("OpenGL geometry-buffer render error");
+    return flipped;
 }
 std::vector<captions::PixelStats> Renderer::captionVisibility(const std::vector<DrawObject>& objects,const Camera& camera,int sampleWidth,float aspect){
     if(sampleWidth<64||sampleWidth>2048)throw std::runtime_error("Invalid caption visibility resolution");

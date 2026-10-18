@@ -18,6 +18,8 @@ video{display:block;width:100%;height:100%;object-fit:contain;background:#080808
 #keys .cap{display:flex;align-items:center;justify-content:center;height:30px;font-size:12px;font-weight:600;border:1px solid #888;border-radius:5px;background:#101818aa;color:#ddd}
 #keys .cap.on{background:#5ed79f;border-color:#5ed79f;color:#06281a}
 #keys .KeyW{grid-area:w}#keys .KeyA{grid-area:a}#keys .KeyS{grid-area:s}#keys .KeyD{grid-area:d}#keys .KeyR{grid-area:r}#keys .Space{grid-area:sp}
+#castStatus.sending{color:#e8c86a}#castStatus.applied{color:#5ed79f}#castStatus.failed{color:#ff8a80}
+#events button[data-hotkey]{position:relative}#events button[data-hotkey] small{position:absolute;top:-7px;right:-4px;background:#333;border:1px solid #666;border-radius:3px;font-size:9px;padding:0 3px;color:#bbb}
 #events input{width:160px;background:#101818cc;border:1px solid #666;border-radius:4px;padding:6px 8px;color:#fff;font:inherit}
 #lagpanel{position:absolute;right:12px;top:40px;min-width:170px;padding:8px 10px;border-radius:6px;background:#101818cc;font:12px/1.5 ui-monospace,Consolas,monospace;pointer-events:none}
 #lagpanel b{color:#5ed79f;font-weight:600}
@@ -30,7 +32,7 @@ video{display:block;width:100%;height:100%;object-fit:contain;background:#080808
 <script src="/racing.js"></script>
 </head>
 <body>
-<header><h1>__SCENE_NAME__</h1><span id="stats">Disconnected</span><select id="mode" aria-label="Video source"><option value="model">Model</option><option value="reference">Reference</option></select><label class="monitor-option"><input id="monitor" type="checkbox">Reference + Render</label><label class="monitor-option"><input id="sound" type="checkbox" checked>Sound</label><label class="monitor-option"><input id="eventsshow" type="checkbox" checked>Prompt</label><div id="events" hidden style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><input id="customEvent" placeholder="what happens (e.g. a dragon flies overhead)" maxlength="300"><button type="button" id="customCast">Cast</button></div><label class="monitor-option"><input id="lagshow" type="checkbox" checked>Latency</label><button id="savelag" disabled title="Download the latency samples of this session as CSV">Save latency</button><button id="savesessions" title="Download one summary row per session (total latency and FPS), kept in this browser">Session log</button><button id="play">Play</button><button id="stop" disabled>Stop</button><button id="fullscreen" title="Fullscreen" aria-label="Fullscreen">&#x26F6;</button></header>
+<header><h1>__SCENE_NAME__</h1><span id="stats">Disconnected</span><select id="mode" aria-label="Video source"><option value="model">Model</option><option value="reference">Reference</option></select><label class="monitor-option"><input id="monitor" type="checkbox">Reference + Render</label><label class="monitor-option"><input id="sound" type="checkbox" checked>Sound</label><label class="monitor-option"><input id="eventsshow" type="checkbox" checked>Prompt</label><div id="events" hidden style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><input id="customEvent" placeholder="what happens (e.g. a dragon flies overhead)" maxlength="300"><button type="button" id="customCast">Cast</button><span id="castStatus" class="cap" style="min-width:150px"></span></div><label class="monitor-option"><input id="lagshow" type="checkbox" checked>Latency</label><button id="savelag" disabled title="Download the latency samples of this session as CSV">Save latency</button><button id="savesessions" title="Download one summary row per session (total latency and FPS), kept in this browser">Session log</button><button id="play">Play</button><button id="stop" disabled>Stop</button><button id="fullscreen" title="Fullscreen" aria-label="Fullscreen">&#x26F6;</button></header>
 <section id="racing-options" hidden style="padding:8px 16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
 <select id="race-mode" aria-label="Game mode"><option value="time_trial">Time trial</option><option value="pursuit">Pursuit</option><option value="drive">Free drive</option></select>
 <select id="route" aria-label="Route"><option value="downtown">Downtown</option><option value="avenue">Avenue</option><option value="skyway">Skyway</option></select>
@@ -100,10 +102,28 @@ function options(){ $('monitor').disabled=starting||!!session||$('mode').value!=
 $('race-mode').onchange=options;
 $('monitor').onchange=layout;$('mode').onchange=options;new ResizeObserver(layout).observe($('stage'));
 const EVENT_PROMPTS=racing?{'Cast spell':'Daytime city, cloudy sky. Center: player-controlled modern four-door sedan with a curved roof and a separate rear trunk, seen from behind in the foreground, a glowing magical spell bursting from the roof in sparks of light. Around: urban streets and multi-story buildings.','Make it rain':'Rainstorm in a city, dark clouds, heavy rain falling, wet reflective asphalt, water spraying from the tires. Center: player-controlled modern four-door sedan with a curved roof and a separate rear trunk, seen from behind in the foreground. Around: urban streets and multi-story buildings.','Night falls':'Nighttime city, dark sky, streetlights and neon signs reflecting on wet asphalt. Center: player-controlled modern four-door sedan with a curved roof and a separate rear trunk, headlights and taillights lit, seen from behind in the foreground. Around: illuminated storefronts and multi-story buildings.'}:{};
-for(const [label,prompt] of Object.entries(EVENT_PROMPTS)){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>{if(ws&&ws.readyState===WebSocket.OPEN){ws.send(JSON.stringify({type:'event_prompt',text:prompt}));note(label);}};$('events').appendChild(b);}
-function castCustom(){const text=$('customEvent').value.trim();if(!text||!ws||ws.readyState!==WebSocket.OPEN)return;const prompt=`Daytime city, cloudy sky. Center: player-controlled modern four-door sedan with a curved roof and a separate rear trunk, seen from behind in the foreground, ${text}. Around: urban streets and multi-story buildings.`;ws.send(JSON.stringify({type:'event_prompt',text:prompt}));note('Cast: '+text);}
+let pendingCast=null,castTimeout=null;
+function setCastStatus(cls,text){const el=$('castStatus');el.className='cap '+cls;el.textContent=text;}
+function sendEvent(label,prompt){
+ if(!ws||ws.readyState!==WebSocket.OPEN){setCastStatus('failed','not connected');return;}
+ ws.send(JSON.stringify({type:'event_prompt',text:prompt}));note(label);
+ pendingCast={label,text:prompt,sentAt:performance.now()};
+ setCastStatus('sending',label+': sending\u2026');
+ clearTimeout(castTimeout);
+ castTimeout=setTimeout(()=>{if(pendingCast&&pendingCast.text===prompt)setCastStatus('failed',label+': no confirmation after 4s (fixed-prompt mode or disconnected)');},4000);
+}
+const EVENT_HOTKEYS={'Cast spell':'F1','Make it rain':'F2','Night falls':'F3'};
+for(const [label,prompt] of Object.entries(EVENT_PROMPTS)){const b=document.createElement('button');b.type='button';b.textContent=label;
+ const key=EVENT_HOTKEYS[label];if(key){b.dataset.hotkey=key;const tag=document.createElement('small');tag.textContent=key;b.appendChild(tag);}
+ b.onclick=()=>sendEvent(label,prompt);$('events').appendChild(b);}
+function castCustom(){const text=$('customEvent').value.trim();if(!text)return;const prompt=`Daytime city, cloudy sky. Center: player-controlled modern four-door sedan with a curved roof and a separate rear trunk, seen from behind in the foreground, ${text}. Around: urban streets and multi-story buildings.`;sendEvent('Cast: '+text,prompt);}
 $('customCast').onclick=castCustom;$('customEvent').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();castCustom();}});
 $('customEvent').addEventListener('keydown',e=>e.stopPropagation());$('customEvent').addEventListener('keyup',e=>e.stopPropagation());
+document.addEventListener('keydown',e=>{
+ if(!session||document.activeElement===$('customEvent'))return;
+ if(e.code==='F4'){e.preventDefault();$('customEvent').focus();return;}
+ for(const [label,key] of Object.entries(EVENT_HOTKEYS))if(e.code===key){e.preventDefault();sendEvent(label,EVENT_PROMPTS[label]);return;}
+});
 const actionKeys=racing?{KeyR:'recover',KeyP:'pause',Enter:'resume'}:{Space:'jump',ShiftLeft:'dash',KeyR:'reload',KeyT:'trap',KeyH:'cover'};
 const handled=new Set(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Digit1','Digit2','Digit3','KeyF','KeyC','Space',...Object.keys(actionKeys)]);
 function note(text){$('notice').textContent=text;}
@@ -163,11 +183,13 @@ $('play').onclick=async()=>{
   await audioReady;
   const game_options=racing?{mode:$('race-mode').value,route:$('route').value,front_drive:Number($('front-drive').value),front_grip:Number($('front-grip').value),rear_grip:Number($('rear-grip').value)}:undefined;
   const response=await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:$('mode').value,monitor:isDual(),game_options})});
-  if(!response.ok)throw Error(await response.text());session=await response.json();seq=0;lag.length=0;lagLog.length=0;fpsLog.length=0;sessionMeta={started:new Date().toISOString(),video_source:$('mode').value,game_mode:racing?$('race-mode').value:'',route:racing?$('route').value:''};lastLagSeq=-1;sessionStart=performance.now();$('savelag').disabled=true;metadata.clear();presented=[];lastState=null;lastVideoAt=0;clientStats={presented:0,matched:0,gameFrame:-1,error:null};$('stop').disabled=false;layout();
+  if(!response.ok)throw Error(await response.text());session=await response.json();seq=0;lag.length=0;lagLog.length=0;fpsLog.length=0;pendingCast=null;clearTimeout(castTimeout);setCastStatus('','');sessionMeta={started:new Date().toISOString(),video_source:$('mode').value,game_mode:racing?$('race-mode').value:'',route:racing?$('route').value:''};lastLagSeq=-1;sessionStart=performance.now();$('savelag').disabled=true;metadata.clear();presented=[];lastState=null;lastVideoAt=0;clientStats={presented:0,matched:0,gameFrame:-1,error:null};$('stop').disabled=false;layout();
   const id=session.id,current=()=>session?.id===id;
   ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/api/${id}/ws`);
   ws.onopen=()=>{if(current())send(true);};updateEvents();
-  ws.onmessage=e=>{if(!current())return;const msg=JSON.parse(e.data);if(msg.type==='webrtc_frames'&&msg.generation_id===id){for(const r of msg.frames)metadata.set(r.rtp_timestamp,r);while(metadata.size>160)metadata.delete(metadata.keys().next().value);if(performance.now()-lastVideoAt<500)match();}else if(msg.type==='stats'){clientStats.server=msg.report;}else if(msg.type==='ended'){clientStats.ended=msg.reason;clientStats.error=null;void stop().then(()=>note(msg.reason==='defeated'?'Game over':'Finished'));}};
+  ws.onmessage=e=>{if(!current())return;const msg=JSON.parse(e.data);if(msg.type==='webrtc_frames'&&msg.generation_id===id){for(const r of msg.frames)metadata.set(r.rtp_timestamp,r);while(metadata.size>160)metadata.delete(metadata.keys().next().value);if(performance.now()-lastVideoAt<500)match();}else if(msg.type==='stats'){clientStats.server=msg.report;
+  if(pendingCast&&msg.report?.prompt===pendingCast.text){const ms=Math.round(performance.now()-pendingCast.sentAt);clearTimeout(castTimeout);setCastStatus('applied',pendingCast.label+': applied in '+ms+'ms');pendingCast=null;}
+ }else if(msg.type==='ended'){clientStats.ended=msg.reason;clientStats.error=null;void stop().then(()=>note(msg.reason==='defeated'?'Game over':'Finished'));}};
   ws.onclose=()=>{if(current()&&!stopping){note('Connection closed');clientStats.error='Control channel closed';void stop();}};
   reader=new MediaMTXWebRTCReader({url:session.whep,onTrack:e=>{if(!current())return;clientStats.error=null;pc=e.target;for(const receiver of pc.getReceivers()){if('playoutDelayHint' in receiver)receiver.playoutDelayHint=0;if('jitterBufferTarget' in receiver)receiver.jitterBufferTarget=0;}video.srcObject=e.streams[0]??new MediaStream([e.track]);video.play().catch(()=>{if(current())note('Click to play');});},onError:e=>{if(current()){clientStats.error=String(e);note(String(e));}}});
   note('Click the game to capture mouse');

@@ -62,6 +62,10 @@ public:
 #ifndef _WIN32
     std::vector<captions::PixelStats> captionVisibility(const std::vector<DrawObject>& objects,const Camera& camera,int sampleWidth=432,float aspect=0);
     std::vector<uint8_t> readBackResized(int outputWidth,int outputHeight);
+    // Exact (not estimated) per-pixel world-space normal (xyz) and linear depth in metres (w), for the same
+    // objects/camera as render(). A separate shader and offscreen target; render() and the live/offline RGB
+    // path are untouched by this. Row 0 is the top row (matches readBack()'s orientation).
+    std::vector<float> renderGeometryBuffers(const std::vector<DrawObject>& objects,const Camera& camera);
     // Replay a fixed-resolution, top-down RGBA reference/output frame, with local HUD only.
     void displayPixels(const std::vector<uint8_t>& rgba,const HudState& hud);
     // Redirect drawing into this window's own offscreen target and back to the
